@@ -24,6 +24,9 @@ type rootOptions struct {
 	profile    string
 	endpoint   string
 	format     string
+	use        string
+	short      string
+	userAgent  string
 }
 
 type commandContext struct {
@@ -32,11 +35,24 @@ type commandContext struct {
 	profile *config.Profile
 }
 
+type RootCommandOptions struct {
+	Use       string
+	Short     string
+	UserAgent string
+}
+
 func NewRootCommand() *cobra.Command {
+	return NewRootCommandWithOptions(RootCommandOptions{})
+}
+
+func NewRootCommandWithOptions(commandOpts RootCommandOptions) *cobra.Command {
 	opts := &rootOptions{}
+	opts.use = defaultString(commandOpts.Use, "foundry")
+	opts.short = defaultString(commandOpts.Short, "Foundry public CLI")
+	opts.userAgent = defaultString(commandOpts.UserAgent, "foundry-cli")
 	cmd := &cobra.Command{
-		Use:          "foundry",
-		Short:        "Foundry public customer CLI",
+		Use:          opts.use,
+		Short:        opts.short,
 		SilenceUsage: true,
 	}
 	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "config file path")
@@ -98,14 +114,14 @@ func (c *commandContext) sdkConfig() (foundry.Config, error) {
 	httpClient := &http.Client{
 		Transport: foundry.Config{
 			APIKey:    c.profile.APIKey,
-			UserAgent: userAgent(),
+			UserAgent: c.root.userAgentString(),
 		}.RoundTripper(http.DefaultTransport),
 	}
 	return foundry.Config{
 		Endpoint:   c.profile.Endpoint,
 		APIKey:     c.profile.APIKey,
 		HTTPClient: httpClient,
-		UserAgent:  userAgent(),
+		UserAgent:  c.root.userAgentString(),
 	}, nil
 }
 
@@ -121,16 +137,23 @@ func (c *commandContext) write(value any) error {
 	return output.Write(os.Stdout, c.profile.Format, value)
 }
 
-func userAgent() string {
-	return fmt.Sprintf("foundry-cli/%s (%s)", version.Version, version.Commit)
+func (o *rootOptions) userAgentString() string {
+	return fmt.Sprintf("%s/%s (%s)", o.userAgent, version.Version, version.Commit)
 }
 
-func newVersionCommand(_ *rootOptions) *cobra.Command {
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func newVersionCommand(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print CLI version",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return output.Write(cmd.OutOrStdout(), "table", fmt.Sprintf("foundry %s (%s, %s)", version.Version, version.Commit, version.Date))
+			return output.Write(cmd.OutOrStdout(), "table", fmt.Sprintf("%s %s (%s, %s)", opts.use, version.Version, version.Commit, version.Date))
 		},
 	}
 }
