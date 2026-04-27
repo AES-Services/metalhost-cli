@@ -1,4 +1,4 @@
-package foundrycli
+package metalhostcli
 
 import (
 	"errors"
@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/AES-Services/foundry-cli/internal/command"
-	"github.com/AES-Services/foundry-cli/internal/config"
-	"github.com/AES-Services/foundry-cli/internal/output"
-	"github.com/AES-Services/foundry-cli/internal/version"
-	"github.com/AES-Services/foundry-sdk/foundry"
+	"github.com/AES-Services/metalhost-cli/internal/command"
+	"github.com/AES-Services/metalhost-cli/internal/config"
+	"github.com/AES-Services/metalhost-cli/internal/output"
+	"github.com/AES-Services/metalhost-cli/internal/version"
+	"github.com/AES-Services/metalhost-sdk/metalhost"
 )
 
 type Options = command.RootCommandOptions
@@ -48,22 +48,22 @@ func RuntimeFromCommand(cmd *cobra.Command, userAgent string) (*Runtime, error) 
 		prof.Format = format
 	}
 	if strings.TrimSpace(userAgent) == "" {
-		userAgent = "foundry-cli/" + version.Version + " (" + version.Commit + ")"
+		userAgent = "metalhost-cli/" + version.Version + " (" + version.Commit + ")"
 	}
 	return &Runtime{Profile: prof, UserAgent: userAgent}, nil
 }
 
-func (r *Runtime) SDKConfig() (foundry.Config, error) {
+func (r *Runtime) SDKConfig() (metalhost.Config, error) {
 	if r == nil || r.Profile == nil || strings.TrimSpace(r.Profile.Endpoint) == "" {
-		return foundry.Config{}, errors.New("endpoint is required; set FOUNDRY_ENDPOINT or run `foundry profile create NAME --endpoint URL`")
+		return metalhost.Config{}, errors.New("endpoint is required; set FOUNDRY_ENDPOINT or run `metalhost profile create NAME --endpoint URL`")
 	}
 	httpClient := &http.Client{
-		Transport: foundry.Config{
+		Transport: metalhost.Config{
 			APIKey:    r.Profile.APIKey,
 			UserAgent: r.UserAgent,
 		}.RoundTripper(http.DefaultTransport),
 	}
-	return foundry.Config{
+	return metalhost.Config{
 		Endpoint:   r.Profile.Endpoint,
 		APIKey:     r.Profile.APIKey,
 		HTTPClient: httpClient,

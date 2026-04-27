@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/AES-Services/foundry-cli/internal/config"
+	"github.com/AES-Services/metalhost-cli/internal/config"
 )
 
 func newProfileCommand(opts *rootOptions) *cobra.Command {
@@ -74,7 +74,7 @@ func newProfileCreateCommand(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&endpoint, "endpoint", "", "Foundry API endpoint")
+	cmd.Flags().StringVar(&endpoint, "endpoint", "", "Metalhost API endpoint")
 	cmd.Flags().StringVar(&project, "project", "", "default project")
 	cmd.Flags().StringVar(&org, "organization", "", "default organization")
 	cmd.Flags().StringVar(&region, "region", "", "default region/datacenter")
@@ -141,7 +141,7 @@ func newProfileSetCommand(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&endpoint, "endpoint", "", "Foundry API endpoint")
+	cmd.Flags().StringVar(&endpoint, "endpoint", "", "Metalhost API endpoint")
 	cmd.Flags().StringVar(&project, "project", "", "default project")
 	cmd.Flags().StringVar(&org, "organization", "", "default organization")
 	cmd.Flags().StringVar(&region, "region", "", "default region/datacenter")

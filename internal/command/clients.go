@@ -1,19 +1,19 @@
 package command
 
 import (
-	auditv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/audit/v1/auditv1connect"
-	baremetalv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/baremetal/v1/baremetalv1connect"
-	catalogv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/catalog/v1/catalogv1connect"
-	computev1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/compute/v1/computev1connect"
-	healthv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/health/v1/healthv1connect"
-	networkv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/network/v1/networkv1connect"
-	objectstorev1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/objectstore/v1/objectstorev1connect"
-	opsv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/ops/v1/opsv1connect"
-	projectv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/project/v1/projectv1connect"
-	quotav1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/quota/v1/quotav1connect"
-	storagev1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/storage/v1/storagev1connect"
-	walletv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/wallet/v1/walletv1connect"
-	webhooksv1connect "github.com/AES-Services/foundry-sdk/gen/go/aes/webhooks/v1/webhooksv1connect"
+	auditv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/audit/v1/auditv1connect"
+	baremetalv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/baremetal/v1/baremetalv1connect"
+	catalogv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/catalog/v1/catalogv1connect"
+	computev1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/compute/v1/computev1connect"
+	healthv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/health/v1/healthv1connect"
+	networkv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/network/v1/networkv1connect"
+	objectstorev1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/objectstore/v1/objectstorev1connect"
+	opsv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/ops/v1/opsv1connect"
+	projectv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/project/v1/projectv1connect"
+	quotav1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/quota/v1/quotav1connect"
+	storagev1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/storage/v1/storagev1connect"
+	walletv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/wallet/v1/walletv1connect"
+	webhooksv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/webhooks/v1/webhooksv1connect"
 )
 
 func (c *commandContext) catalogClient() (catalogv1connect.CatalogServiceClient, error) {

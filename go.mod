@@ -1,10 +1,10 @@
-module github.com/AES-Services/foundry-cli
+module github.com/AES-Services/metalhost-cli
 
 go 1.25.0
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/AES-Services/foundry-sdk v0.0.1
+	github.com/AES-Services/metalhost-sdk v0.1.0
 	github.com/spf13/cobra v1.10.1
 	gopkg.in/yaml.v3 v3.0.1
 )

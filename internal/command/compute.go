@@ -4,7 +4,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	computev1 "github.com/AES-Services/foundry-sdk/gen/go/aes/compute/v1"
+	computev1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/compute/v1"
 )
 
 func newComputeCommand(opts *rootOptions) *cobra.Command {

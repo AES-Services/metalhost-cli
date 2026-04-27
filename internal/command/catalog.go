@@ -4,8 +4,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	catalogv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/catalog/v1"
-	healthv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/health/v1"
+	catalogv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/catalog/v1"
+	healthv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/health/v1"
 )
 
 func newCatalogCommand(opts *rootOptions) *cobra.Command {

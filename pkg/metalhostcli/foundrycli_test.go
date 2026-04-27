@@ -1,4 +1,4 @@
-package foundrycli
+package metalhostcli
 
 import "testing"
 

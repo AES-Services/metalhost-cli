@@ -6,7 +6,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	objectv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/objectstore/v1"
+	objectv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/objectstore/v1"
 )
 
 func newObjectStoreCommand(opts *rootOptions) *cobra.Command {

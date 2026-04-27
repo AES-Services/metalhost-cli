@@ -4,7 +4,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	projectv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/project/v1"
+	projectv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/project/v1"
 )
 
 func newProjectCommand(opts *rootOptions) *cobra.Command {

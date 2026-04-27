@@ -6,7 +6,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	opsv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/ops/v1"
+	opsv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/ops/v1"
 )
 
 func newOpsCommand(opts *rootOptions) *cobra.Command {

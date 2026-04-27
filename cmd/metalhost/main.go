@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/AES-Services/foundry-cli/internal/command"
+	"github.com/AES-Services/metalhost-cli/internal/command"
 )
 
 func main() {

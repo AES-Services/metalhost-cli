@@ -11,12 +11,12 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	"github.com/AES-Services/foundry-cli/internal/config"
-	"github.com/AES-Services/foundry-cli/internal/output"
-	"github.com/AES-Services/foundry-cli/internal/version"
-	"github.com/AES-Services/foundry-sdk/foundry"
-	iamv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/iam/v1"
-	"github.com/AES-Services/foundry-sdk/gen/go/aes/iam/v1/iamv1connect"
+	"github.com/AES-Services/metalhost-cli/internal/config"
+	"github.com/AES-Services/metalhost-cli/internal/output"
+	"github.com/AES-Services/metalhost-cli/internal/version"
+	"github.com/AES-Services/metalhost-sdk/metalhost"
+	iamv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/iam/v1"
+	"github.com/AES-Services/metalhost-sdk/gen/go/aes/iam/v1/iamv1connect"
 )
 
 type rootOptions struct {
@@ -47,9 +47,9 @@ func NewRootCommand() *cobra.Command {
 
 func NewRootCommandWithOptions(commandOpts RootCommandOptions) *cobra.Command {
 	opts := &rootOptions{}
-	opts.use = defaultString(commandOpts.Use, "foundry")
-	opts.short = defaultString(commandOpts.Short, "Foundry public CLI")
-	opts.userAgent = defaultString(commandOpts.UserAgent, "foundry-cli")
+	opts.use = defaultString(commandOpts.Use, "metalhost")
+	opts.short = defaultString(commandOpts.Short, "Metalhost public CLI")
+	opts.userAgent = defaultString(commandOpts.UserAgent, "metalhost-cli")
 	cmd := &cobra.Command{
 		Use:          opts.use,
 		Short:        opts.short,
@@ -57,7 +57,7 @@ func NewRootCommandWithOptions(commandOpts RootCommandOptions) *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "config file path")
 	cmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "profile name")
-	cmd.PersistentFlags().StringVar(&opts.endpoint, "endpoint", "", "Foundry API endpoint")
+	cmd.PersistentFlags().StringVar(&opts.endpoint, "endpoint", "", "Metalhost API endpoint")
 	cmd.PersistentFlags().StringVarP(&opts.format, "format", "o", "", "output format: table, json, yaml")
 
 	cmd.AddCommand(newVersionCommand(opts))
@@ -107,17 +107,17 @@ func loadCommandContext(opts *rootOptions) (*commandContext, error) {
 	return &commandContext{root: opts, config: cfg, profile: prof}, nil
 }
 
-func (c *commandContext) sdkConfig() (foundry.Config, error) {
+func (c *commandContext) sdkConfig() (metalhost.Config, error) {
 	if strings.TrimSpace(c.profile.Endpoint) == "" {
-		return foundry.Config{}, errors.New("endpoint is required; set FOUNDRY_ENDPOINT or run `foundry profile create NAME --endpoint URL`")
+		return metalhost.Config{}, errors.New("endpoint is required; set FOUNDRY_ENDPOINT or run `metalhost profile create NAME --endpoint URL`")
 	}
 	httpClient := &http.Client{
-		Transport: foundry.Config{
+		Transport: metalhost.Config{
 			APIKey:    c.profile.APIKey,
 			UserAgent: c.root.userAgentString(),
 		}.RoundTripper(http.DefaultTransport),
 	}
-	return foundry.Config{
+	return metalhost.Config{
 		Endpoint:   c.profile.Endpoint,
 		APIKey:     c.profile.APIKey,
 		HTTPClient: httpClient,
@@ -188,7 +188,7 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(ctx.profile.APIKey) == "" {
-				return errors.New("API key is required; set FOUNDRY_API_KEY or run `foundry auth login --api-key`")
+				return errors.New("API key is required; set FOUNDRY_API_KEY or run `metalhost auth login --api-key`")
 			}
 			client, err := ctx.iamClient()
 			if err != nil {
@@ -211,7 +211,7 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 			}
 			key := strings.TrimSpace(os.Getenv("FOUNDRY_API_KEY"))
 			if key == "" {
-				return errors.New("set FOUNDRY_API_KEY before running `foundry auth login --api-key`")
+				return errors.New("set FOUNDRY_API_KEY before running `metalhost auth login --api-key`")
 			}
 			cfg, err := config.Load(opts.configPath)
 			if err != nil {
@@ -222,7 +222,7 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 				name = cfg.CurrentProfile
 			}
 			if name == "" {
-				return errors.New("select a profile first with `foundry profile use NAME`")
+				return errors.New("select a profile first with `metalhost profile use NAME`")
 			}
 			prof := cfg.Profiles[name]
 			if prof == nil {

@@ -4,7 +4,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	networkv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/network/v1"
+	networkv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/network/v1"
 )
 
 func newNetworkCommand(opts *rootOptions) *cobra.Command {

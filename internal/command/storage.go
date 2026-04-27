@@ -4,7 +4,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	storagev1 "github.com/AES-Services/foundry-sdk/gen/go/aes/storage/v1"
+	storagev1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/storage/v1"
 )
 
 func newStorageCommand(opts *rootOptions) *cobra.Command {

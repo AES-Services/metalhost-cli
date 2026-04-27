@@ -1,15 +1,15 @@
 version: 2
 
-project_name: foundry
+project_name: metalhost
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: foundry
-    main: ./cmd/foundry
-    binary: foundry
+  - id: metalhost
+    main: ./cmd/metalhost
+    binary: metalhost
     env:
       - CGO_ENABLED=0
     goos:
@@ -32,14 +32,14 @@ builds:
         goarch: arm
     ldflags:
       - -s -w
-      - -X github.com/AES-Services/foundry-cli/internal/version.Version={{ .Version }}
-      - -X github.com/AES-Services/foundry-cli/internal/version.Commit={{ .Commit }}
-      - -X github.com/AES-Services/foundry-cli/internal/version.Date={{ .Date }}
+      - -X github.com/AES-Services/metalhost-cli/internal/version.Version={{ .Version }}
+      - -X github.com/AES-Services/metalhost-cli/internal/version.Commit={{ .Commit }}
+      - -X github.com/AES-Services/metalhost-cli/internal/version.Date={{ .Date }}
 
 archives:
-  - id: foundry
+  - id: metalhost
     ids:
-      - foundry
+      - metalhost
     formats:
       - tar.gz
     format_overrides:
@@ -75,6 +75,6 @@ changelog:
 release:
   github:
     owner: AES-Services
-    name: foundry-cli
+    name: metalhost-cli
   draft: false
   prerelease: auto

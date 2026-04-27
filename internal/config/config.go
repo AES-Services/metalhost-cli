@@ -30,7 +30,7 @@ func DefaultPath() (string, error) {
 		if base == "" {
 			return "", errors.New("AppData is not set")
 		}
-		return filepath.Join(base, "Foundry", "config.yaml"), nil
+		return filepath.Join(base, "Metalhost", "config.yaml"), nil
 	}
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {
@@ -40,7 +40,7 @@ func DefaultPath() (string, error) {
 		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "foundry", "config.yaml"), nil
+	return filepath.Join(base, "metalhost", "config.yaml"), nil
 }
 
 func Load(path string) (*File, error) {

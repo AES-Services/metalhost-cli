@@ -6,11 +6,11 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	auditv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/audit/v1"
-	baremetalv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/baremetal/v1"
-	quotav1 "github.com/AES-Services/foundry-sdk/gen/go/aes/quota/v1"
-	walletv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/wallet/v1"
-	webhooksv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/webhooks/v1"
+	auditv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/audit/v1"
+	baremetalv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/baremetal/v1"
+	quotav1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/quota/v1"
+	walletv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/wallet/v1"
+	webhooksv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/webhooks/v1"
 )
 
 func newWalletCommand(opts *rootOptions) *cobra.Command {

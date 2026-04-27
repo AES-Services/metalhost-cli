@@ -4,7 +4,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	iamv1 "github.com/AES-Services/foundry-sdk/gen/go/aes/iam/v1"
+	iamv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/iam/v1"
 )
 
 func newIAMCommand(opts *rootOptions) *cobra.Command {
