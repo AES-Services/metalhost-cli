@@ -45,6 +45,10 @@ func NewRootCommand() *cobra.Command {
 	return NewRootCommandWithOptions(RootCommandOptions{})
 }
 
+// NewRootCommandWithOptions builds a fully-loaded customer CLI root in one
+// call. Used by the in-package tests and as a back-compat single-shot entry
+// point. The two-step path (runtime.NewRootCommand → AttachCustomerCommands)
+// is preferred for callers who want to opt out of the customer command tree.
 func NewRootCommandWithOptions(commandOpts RootCommandOptions) *cobra.Command {
 	opts := &rootOptions{}
 	opts.use = defaultString(commandOpts.Use, "metalhost")
@@ -62,6 +66,45 @@ func NewRootCommandWithOptions(commandOpts RootCommandOptions) *cobra.Command {
 
 	cmd.AddCommand(newVersionCommand(opts))
 	cmd.AddCommand(newProfileCommand(opts))
+	addCustomerCommands(cmd, opts)
+	return cmd
+}
+
+// AttachCustomerCommands wires the full customer command tree (auth, iam,
+// vm, disk, network, ...) onto a root that's already been built by
+// pkg/metalhostcli/runtime.NewRootCommand. Use this when something else owns
+// the bare root setup — typically the metalhostcli package wrapping a
+// runtime-built root for the `metalhost` binary.
+//
+// The persistent flags on `cmd` are bound to runtime's rootOptions, not ours.
+// We bridge by re-reading flag values into our struct in PersistentPreRunE,
+// which cobra invokes on the root before any leaf RunE.
+func AttachCustomerCommands(cmd *cobra.Command, commandOpts RootCommandOptions) {
+	opts := &rootOptions{
+		use:       defaultString(commandOpts.Use, "metalhost"),
+		short:     defaultString(commandOpts.Short, "Metalhost public CLI"),
+		userAgent: defaultString(commandOpts.UserAgent, "metalhost-cli"),
+	}
+
+	prev := cmd.PersistentPreRunE
+	cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
+		opts.configPath, _ = c.Root().PersistentFlags().GetString("config")
+		opts.profile, _ = c.Root().PersistentFlags().GetString("profile")
+		opts.endpoint, _ = c.Root().PersistentFlags().GetString("endpoint")
+		opts.format, _ = c.Root().PersistentFlags().GetString("format")
+		if prev != nil {
+			return prev(c, args)
+		}
+		return nil
+	}
+
+	addCustomerCommands(cmd, opts)
+}
+
+// addCustomerCommands is the single source of truth for which subcommands the
+// customer CLI exposes. Both NewRootCommandWithOptions and
+// AttachCustomerCommands route through it.
+func addCustomerCommands(cmd *cobra.Command, opts *rootOptions) {
 	cmd.AddCommand(newAuthCommand(opts))
 	cmd.AddCommand(newIAMCommand(opts))
 	cmd.AddCommand(newCatalogCommand(opts))
@@ -86,7 +129,6 @@ func NewRootCommandWithOptions(commandOpts RootCommandOptions) *cobra.Command {
 	cmd.AddCommand(newBareMetalCommand(opts))
 	cmd.AddCommand(newWebhooksCommand(opts))
 	cmd.AddCommand(newCompletionCommand(cmd))
-	return cmd
 }
 
 func loadCommandContext(opts *rootOptions) (*commandContext, error) {
@@ -109,7 +151,7 @@ func loadCommandContext(opts *rootOptions) (*commandContext, error) {
 
 func (c *commandContext) sdkConfig() (metalhost.Config, error) {
 	if strings.TrimSpace(c.profile.Endpoint) == "" {
-		return metalhost.Config{}, errors.New("endpoint is required; set FOUNDRY_ENDPOINT or run `metalhost profile create NAME --endpoint URL`")
+		return metalhost.Config{}, errors.New("endpoint is required; set METALHOST_ENDPOINT or run `metalhost profile create NAME --endpoint URL`")
 	}
 	httpClient := &http.Client{
 		Transport: metalhost.Config{
@@ -188,7 +230,7 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(ctx.profile.APIKey) == "" {
-				return errors.New("API key is required; set FOUNDRY_API_KEY or run `metalhost auth login --api-key`")
+				return errors.New("API key is required; set METALHOST_API_KEY or run `metalhost auth login --api-key`")
 			}
 			client, err := ctx.iamClient()
 			if err != nil {
@@ -209,9 +251,9 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 			if !loginAPIKey {
 				return errors.New("only --api-key login is implemented in this scaffold")
 			}
-			key := strings.TrimSpace(os.Getenv("FOUNDRY_API_KEY"))
+			key := strings.TrimSpace(os.Getenv("METALHOST_API_KEY"))
 			if key == "" {
-				return errors.New("set FOUNDRY_API_KEY before running `metalhost auth login --api-key`")
+				return errors.New("set METALHOST_API_KEY before running `metalhost auth login --api-key`")
 			}
 			cfg, err := config.Load(opts.configPath)
 			if err != nil {
@@ -236,7 +278,7 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	login.Flags().BoolVar(&loginAPIKey, "api-key", false, "read API key from FOUNDRY_API_KEY")
+	login.Flags().BoolVar(&loginAPIKey, "api-key", false, "read API key from METALHOST_API_KEY")
 	cmd.AddCommand(login)
 	return cmd
 }

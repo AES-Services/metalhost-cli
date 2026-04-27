@@ -16,8 +16,8 @@ func TestLoadMissingFile(t *testing.T) {
 }
 
 func TestActiveMergesEnvironment(t *testing.T) {
-	t.Setenv("FOUNDRY_ENDPOINT", "https://env.example.com")
-	t.Setenv("FOUNDRY_API_KEY", "env-key")
+	t.Setenv("METALHOST_ENDPOINT", "https://env.example.com")
+	t.Setenv("METALHOST_API_KEY", "env-key")
 	cfg := &File{
 		CurrentProfile: "dev",
 		Profiles: map[string]*Profile{

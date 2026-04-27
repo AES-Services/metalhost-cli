@@ -94,7 +94,7 @@ func (f *File) Active(profileName string) (*Profile, string, error) {
 		f.Profiles = map[string]*Profile{}
 	}
 	if profileName == "" {
-		profileName = os.Getenv("FOUNDRY_PROFILE")
+		profileName = os.Getenv("METALHOST_PROFILE")
 	}
 	if profileName == "" {
 		profileName = f.CurrentProfile
@@ -111,22 +111,22 @@ func (f *File) Active(profileName string) (*Profile, string, error) {
 
 func mergeEnv(p *Profile) *Profile {
 	out := *p
-	if v := strings.TrimSpace(os.Getenv("FOUNDRY_ENDPOINT")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("METALHOST_ENDPOINT")); v != "" {
 		out.Endpoint = v
 	}
-	if v := strings.TrimSpace(os.Getenv("FOUNDRY_API_KEY")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("METALHOST_API_KEY")); v != "" {
 		out.APIKey = v
 	}
-	if v := strings.TrimSpace(os.Getenv("FOUNDRY_ORGANIZATION")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("METALHOST_ORGANIZATION")); v != "" {
 		out.Organization = v
 	}
-	if v := strings.TrimSpace(os.Getenv("FOUNDRY_PROJECT")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("METALHOST_PROJECT")); v != "" {
 		out.Project = v
 	}
-	if v := strings.TrimSpace(os.Getenv("FOUNDRY_REGION")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("METALHOST_REGION")); v != "" {
 		out.Region = v
 	}
-	if v := strings.TrimSpace(os.Getenv("FOUNDRY_FORMAT")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("METALHOST_FORMAT")); v != "" {
 		out.Format = v
 	}
 	return &out

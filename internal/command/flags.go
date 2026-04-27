@@ -36,7 +36,7 @@ func requireProject(ctx *commandContext, explicit string) (string, error) {
 	if ctx.profile.Project != "" {
 		return ctx.profile.Project, nil
 	}
-	return "", errors.New("project is required; pass --project or set FOUNDRY_PROJECT/profile default")
+	return "", errors.New("project is required; pass --project or set METALHOST_PROJECT/profile default")
 }
 
 func stringMapFromPairs(pairs []string) map[string]string {
