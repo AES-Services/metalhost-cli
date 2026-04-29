@@ -12,6 +12,7 @@ import (
 	projectv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/project/v1/projectv1connect"
 	quotav1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/quota/v1/quotav1connect"
 	storagev1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/storage/v1/storagev1connect"
+	supportv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/support/v1/supportv1connect"
 	walletv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/wallet/v1/walletv1connect"
 	webhooksv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/webhooks/v1/webhooksv1connect"
 )
@@ -118,4 +119,12 @@ func (c *commandContext) webhooksClient() (webhooksv1connect.WebhookServiceClien
 		return nil, err
 	}
 	return webhooksv1connect.NewWebhookServiceClient(cfg.Client(), cfg.BaseURL()), nil
+}
+
+func (c *commandContext) supportClient() (supportv1connect.SupportServiceClient, error) {
+	cfg, err := c.sdkConfig()
+	if err != nil {
+		return nil, err
+	}
+	return supportv1connect.NewSupportServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }

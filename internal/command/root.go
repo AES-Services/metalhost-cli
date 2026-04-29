@@ -128,6 +128,7 @@ func addCustomerCommands(cmd *cobra.Command, opts *rootOptions) {
 	cmd.AddCommand(newAuditCommand(opts))
 	cmd.AddCommand(newBareMetalCommand(opts))
 	cmd.AddCommand(newWebhooksCommand(opts))
+	cmd.AddCommand(newSupportCommand(opts))
 	cmd.AddCommand(newCompletionCommand(cmd))
 }
 
