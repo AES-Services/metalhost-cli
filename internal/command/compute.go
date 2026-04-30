@@ -1,6 +1,9 @@
 package command
 
 import (
+	"fmt"
+	"strings"
+
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
@@ -10,6 +13,8 @@ import (
 func newComputeCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "vm", Aliases: []string{"vms", "compute"}, Short: "Manage virtual machines"}
 	cmd.AddCommand(newVMCommands(opts)...)
+	cmd.AddCommand(newSSHKeyCommands(opts))
+	cmd.AddCommand(newUserDataSnippetCommands(opts))
 	cmd.AddCommand(newImageCommand(opts))
 	return cmd
 }
@@ -60,7 +65,9 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 
 	var createProject, region, sku, image, bootURL, sshKey, userData string
 	var diskSize int32
-	var networks []string
+	var networks, sshKeyNames, userDataSnippetNames []string
+	var billingModeRaw string
+	var autorenew bool
 	create := &cobra.Command{Use: "create", Short: "Create VM", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -73,11 +80,29 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 		if region == "" {
 			region = ctx.profile.Region
 		}
+		billingMode, err := parseBillingMode(billingModeRaw)
+		if err != nil {
+			return err
+		}
 		client, err := ctx.computeClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.CreateVirtualMachineRequest{ProjectName: projectName, DatacenterName: region, InstanceType: sku, ImageName: image, BootImageUrl: bootURL, DiskSizeGib: diskSize, NetworkNames: networks, SshPubkey: sshKey, UserData: userData}))
+		resp, err := client.CreateVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.CreateVirtualMachineRequest{
+			ProjectName:          projectName,
+			DatacenterName:       region,
+			InstanceType:         sku,
+			ImageName:            image,
+			BootImageUrl:         bootURL,
+			DiskSizeGib:          diskSize,
+			NetworkNames:         networks,
+			SshPubkey:            sshKey,
+			UserData:             userData,
+			SshKeyNames:          sshKeyNames,
+			UserDataSnippetNames: userDataSnippetNames,
+			BillingMode:          billingMode,
+			Autorenew:            autorenew,
+		}))
 		if err != nil {
 			return err
 		}
@@ -92,6 +117,10 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 	create.Flags().StringSliceVar(&networks, "network", nil, "network to attach")
 	create.Flags().StringVar(&sshKey, "ssh-key", "", "SSH public key")
 	create.Flags().StringVar(&userData, "user-data", "", "cloud-init user data")
+	create.Flags().StringSliceVar(&sshKeyNames, "ssh-key-name", nil, "registered SSH key resource name(s), e.g. projects/my-proj/ssh-keys/my-key")
+	create.Flags().StringSliceVar(&userDataSnippetNames, "user-data-snippet-name", nil, "registered user-data snippet resource name(s)")
+	create.Flags().StringVar(&billingModeRaw, "billing-mode", "", "BILLING_MODE_HOURLY (default if empty), BILLING_MODE_MONTHLY_1, monthly-1, …")
+	create.Flags().BoolVar(&autorenew, "autorenew", false, "auto-renew prepaid monthly term (ignored for hourly billing)")
 
 	return []*cobra.Command{
 		list, get, create,
@@ -260,4 +289,29 @@ func newImageCommand(opts *rootOptions) *cobra.Command {
 		return ctx.write(resp.Msg)
 	}})
 	return cmd
+}
+
+func parseBillingMode(raw string) (computev1.BillingMode, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return computev1.BillingMode_BILLING_MODE_UNSPECIFIED, nil
+	}
+	u := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(s, "-", "_"), " ", "_"))
+	if v, ok := computev1.BillingMode_value[u]; ok {
+		return computev1.BillingMode(v), nil
+	}
+	switch u {
+	case "HOURLY":
+		return computev1.BillingMode_BILLING_MODE_HOURLY, nil
+	case "MONTHLY_1", "MONTHLY1":
+		return computev1.BillingMode_BILLING_MODE_MONTHLY_1, nil
+	case "MONTHLY_3", "MONTHLY3":
+		return computev1.BillingMode_BILLING_MODE_MONTHLY_3, nil
+	case "MONTHLY_6", "MONTHLY6":
+		return computev1.BillingMode_BILLING_MODE_MONTHLY_6, nil
+	case "MONTHLY_12", "MONTHLY12":
+		return computev1.BillingMode_BILLING_MODE_MONTHLY_12, nil
+	default:
+		return 0, fmt.Errorf("unknown billing mode %q (examples: BILLING_MODE_HOURLY, monthly-3)", raw)
+	}
 }

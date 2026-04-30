@@ -57,6 +57,22 @@ func (c *commandContext) computeClient() (computev1connect.ComputeServiceClient,
 	return computev1connect.NewComputeServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
+func (c *commandContext) sshKeyClient() (computev1connect.SSHKeyServiceClient, error) {
+	cfg, err := c.sdkConfig()
+	if err != nil {
+		return nil, err
+	}
+	return computev1connect.NewSSHKeyServiceClient(cfg.Client(), cfg.BaseURL()), nil
+}
+
+func (c *commandContext) userDataSnippetClient() (computev1connect.UserDataSnippetServiceClient, error) {
+	cfg, err := c.sdkConfig()
+	if err != nil {
+		return nil, err
+	}
+	return computev1connect.NewUserDataSnippetServiceClient(cfg.Client(), cfg.BaseURL()), nil
+}
+
 func (c *commandContext) storageClient() (storagev1connect.StorageServiceClient, error) {
 	cfg, err := c.sdkConfig()
 	if err != nil {
