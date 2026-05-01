@@ -54,22 +54,23 @@ func newSignupCommand(opts *rootOptions) *cobra.Command {
 			if endpoint == "" {
 				return errors.New("--endpoint or METALHOST_ENDPOINT is required for signup")
 			}
-			email = strings.TrimSpace(strings.ToLower(promptIfEmpty(cmd, email, "Email: ")))
+			pr := newPromptReader(cmd)
+			email = strings.TrimSpace(strings.ToLower(pr.promptIfEmpty(email, "Email: ")))
 			if email == "" {
 				return errors.New("email is required")
 			}
-			displayName = strings.TrimSpace(promptIfEmpty(cmd, displayName, "Organization display name: "))
+			displayName = strings.TrimSpace(pr.promptIfEmpty(displayName, "Organization display name: "))
 			if displayName == "" {
 				return errors.New("display-name is required")
 			}
-			password, err := readPasswordPrompt(cmd, "Password (≥8 chars): ")
+			password, err := pr.readPassword("Password (≥8 chars): ")
 			if err != nil {
 				return err
 			}
 			if len(password) < 8 {
 				return errors.New("password must be at least 8 characters")
 			}
-			confirm, err := readPasswordPrompt(cmd, "Confirm password: ")
+			confirm, err := pr.readPassword("Confirm password: ")
 			if err != nil {
 				return err
 			}
@@ -142,11 +143,12 @@ func passwordLogin(cmd *cobra.Command, opts *rootOptions, email string) error {
 	if endpoint == "" {
 		return errors.New("--endpoint or METALHOST_ENDPOINT is required")
 	}
-	email = strings.TrimSpace(strings.ToLower(promptIfEmpty(cmd, email, "Email: ")))
+	pr := newPromptReader(cmd)
+	email = strings.TrimSpace(strings.ToLower(pr.promptIfEmpty(email, "Email: ")))
 	if email == "" {
 		return errors.New("email is required")
 	}
-	password, err := readPasswordPrompt(cmd, "Password: ")
+	password, err := pr.readPassword("Password: ")
 	if err != nil {
 		return err
 	}
@@ -400,39 +402,53 @@ func (l *loopback) shutdown() {
 	_ = l.server.Shutdown(ctx)
 }
 
-// readPasswordPrompt reads a password from /dev/tty without echoing, falling back to stdin
-// when the input isn't a TTY (CI / piped input). Each call writes its prompt to stderr so
-// piped scripts that capture stdout aren't confused by prompts.
-func readPasswordPrompt(cmd *cobra.Command, prompt string) (string, error) {
-	fmt.Fprint(cmd.ErrOrStderr(), prompt)
+// promptReader is the shared bufio.Reader used by interactive prompts within a single command
+// invocation. We MUST share one reader across prompts: each bufio.Reader has its own internal
+// buffer, so creating one per prompt drops piped lines after the first into the discarded
+// buffer. Lazily initialized per command via newPromptReader.
+type promptReader struct {
+	r *bufio.Reader
+	w *cobra.Command
+}
+
+func newPromptReader(cmd *cobra.Command) *promptReader {
+	return &promptReader{r: bufio.NewReader(cmd.InOrStdin()), w: cmd}
+}
+
+// readLine returns one line from the shared reader, with the prompt written to stderr so
+// stdout (often used for the saved-credential message) stays clean.
+func (p *promptReader) readLine(prompt string) string {
+	fmt.Fprint(p.w.ErrOrStderr(), prompt)
+	line, _ := p.r.ReadString('\n')
+	return strings.TrimRight(line, "\r\n")
+}
+
+// readPassword reads a password from /dev/tty without echoing, falling back to a line on the
+// shared reader when stdin isn't a TTY (CI / piped). Both branches print the prompt to stderr.
+func (p *promptReader) readPassword(prompt string) (string, error) {
+	fmt.Fprint(p.w.ErrOrStderr(), prompt)
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
-		// Piped / non-interactive — read a line from stdin.
-		r := bufio.NewReader(cmd.InOrStdin())
-		line, err := r.ReadString('\n')
+		line, err := p.r.ReadString('\n')
 		if err != nil && err.Error() != "EOF" {
 			return "", err
 		}
 		return strings.TrimRight(line, "\r\n"), nil
 	}
 	pw, err := term.ReadPassword(fd)
-	fmt.Fprintln(cmd.ErrOrStderr())
+	fmt.Fprintln(p.w.ErrOrStderr())
 	if err != nil {
 		return "", err
 	}
 	return string(pw), nil
 }
 
-// promptIfEmpty asks for a value via stdin/tty when `existing` is empty. Used to fill
-// flag-supplied values interactively.
-func promptIfEmpty(cmd *cobra.Command, existing, prompt string) string {
+// promptIfEmpty falls back to readLine when the flag-supplied value is empty.
+func (p *promptReader) promptIfEmpty(existing, prompt string) string {
 	if strings.TrimSpace(existing) != "" {
 		return existing
 	}
-	fmt.Fprint(cmd.ErrOrStderr(), prompt)
-	r := bufio.NewReader(cmd.InOrStdin())
-	line, _ := r.ReadString('\n')
-	return strings.TrimRight(line, "\r\n")
+	return p.readLine(prompt)
 }
 
 // openBrowser launches the default browser on the user's OS for the given URL. Best-effort —
