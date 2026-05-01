@@ -244,44 +244,76 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 			return ctx.write(resp.Msg)
 		},
 	})
-	var loginAPIKey bool
+	var (
+		loginAPIKey  bool
+		loginEmail   string
+		loginOIDC    string
+	)
 	login := &cobra.Command{
 		Use:   "login",
-		Short: "Store credentials in the active profile",
+		Short: "Sign in and store credentials in the active profile (email/password, OIDC, or --api-key).",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !loginAPIKey {
-				return errors.New("only --api-key login is implemented in this scaffold")
+			modes := 0
+			if loginAPIKey {
+				modes++
 			}
-			key := strings.TrimSpace(os.Getenv("METALHOST_API_KEY"))
-			if key == "" {
-				return errors.New("set METALHOST_API_KEY before running `metalhost auth login --api-key`")
+			if strings.TrimSpace(loginEmail) != "" {
+				modes++
 			}
-			cfg, err := config.Load(opts.configPath)
-			if err != nil {
-				return err
+			if strings.TrimSpace(loginOIDC) != "" {
+				modes++
 			}
-			name := opts.profile
-			if name == "" {
-				name = cfg.CurrentProfile
+			if modes == 0 {
+				return errors.New("pick a mode: --email <addr>, --oidc google|github, or --api-key")
 			}
-			if name == "" {
-				return errors.New("select a profile first with `metalhost profile use NAME`")
+			if modes > 1 {
+				return errors.New("--email, --oidc, and --api-key are mutually exclusive")
 			}
-			prof := cfg.Profiles[name]
-			if prof == nil {
-				return errors.New("profile not found: " + name)
+			if loginAPIKey {
+				return loginWithEnvAPIKey(cmd, opts)
 			}
-			prof.APIKey = key
-			if err := config.Save(opts.configPath, cfg); err != nil {
-				return err
+			if strings.TrimSpace(loginEmail) != "" {
+				return passwordLogin(cmd, opts, loginEmail)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "stored API key for profile %q\n", name)
-			return nil
+			return oidcLogin(cmd, opts, loginOIDC)
 		},
 	}
 	login.Flags().BoolVar(&loginAPIKey, "api-key", false, "read API key from METALHOST_API_KEY")
+	login.Flags().StringVar(&loginEmail, "email", "", "sign in with email + password (prompts for password)")
+	login.Flags().StringVar(&loginOIDC, "oidc", "", "sign in via OIDC provider slug (e.g. google, github) — opens browser")
 	cmd.AddCommand(login)
+	authFlowsCommands(cmd, opts)
 	return cmd
+}
+
+// loginWithEnvAPIKey is the legacy --api-key path: read METALHOST_API_KEY, save to active
+// profile. Kept for back-compat with existing scripted setups.
+func loginWithEnvAPIKey(cmd *cobra.Command, opts *rootOptions) error {
+	key := strings.TrimSpace(os.Getenv("METALHOST_API_KEY"))
+	if key == "" {
+		return errors.New("set METALHOST_API_KEY before running `metalhost auth login --api-key`")
+	}
+	cfg, err := config.Load(opts.configPath)
+	if err != nil {
+		return err
+	}
+	name := opts.profile
+	if name == "" {
+		name = cfg.CurrentProfile
+	}
+	if name == "" {
+		return errors.New("select a profile first with `metalhost profile use NAME`")
+	}
+	prof := cfg.Profiles[name]
+	if prof == nil {
+		return errors.New("profile not found: " + name)
+	}
+	prof.APIKey = key
+	if err := config.Save(opts.configPath, cfg); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "stored API key for profile %q\n", name)
+	return nil
 }
 
 func runWithBackground(cmd *cobra.Command, fn func(context.Context) error) error {
