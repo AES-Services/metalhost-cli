@@ -154,7 +154,7 @@ func newSupportTicketGetCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.GetTicket(cmd.Context(), connect.NewRequest(&supportv1.GetTicketRequest{
-				TicketId: args[0],
+				Name: args[0],
 			}))
 			if err != nil {
 				return err
@@ -181,7 +181,7 @@ func newSupportTicketReplyCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.ReplyTicket(cmd.Context(), connect.NewRequest(&supportv1.ReplyTicketRequest{
-				TicketId: args[0],
+				Name: args[0],
 				Body:     body,
 			}))
 			if err != nil {
@@ -211,7 +211,7 @@ func newSupportTicketCloseCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.CloseTicket(cmd.Context(), connect.NewRequest(&supportv1.CloseTicketRequest{
-				TicketId: args[0],
+				Name: args[0],
 				Body:     body,
 			}))
 			if err != nil {

@@ -31,7 +31,7 @@ func newSSHKeyCommands(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.ListSSHKeys(cmd.Context(), connect.NewRequest(&computev1.ListSSHKeysRequest{
-				ProjectId: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken,
+				ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken,
 			}))
 			if err != nil {
 				return err
@@ -82,7 +82,7 @@ func newSSHKeyCommands(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.CreateSSHKey(cmd.Context(), connect.NewRequest(&computev1.CreateSSHKeyRequest{
-				ProjectId:   projectName,
+				ProjectName:   projectName,
 				SshKeyId:    keyID,
 				DisplayName: displayName,
 				PublicKey:   publicKey,
@@ -192,7 +192,7 @@ func newUserDataSnippetCommands(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.ListUserDataSnippets(cmd.Context(), connect.NewRequest(&computev1.ListUserDataSnippetsRequest{
-				ProjectId: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken,
+				ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken,
 			}))
 			if err != nil {
 				return err
@@ -250,7 +250,7 @@ func newUserDataSnippetCommands(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.CreateUserDataSnippet(cmd.Context(), connect.NewRequest(&computev1.CreateUserDataSnippetRequest{
-				ProjectId:   projectName,
+				ProjectName:   projectName,
 				SnippetId:   snippetID,
 				DisplayName: displayName,
 				Content:     body,

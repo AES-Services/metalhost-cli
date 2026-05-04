@@ -4,6 +4,8 @@ github.com/AES-Services/metalhost-sdk v0.1.1-rc.2 h1:lTPMezDIfw+wETHlBd7iE3R3esz
 github.com/AES-Services/metalhost-sdk v0.1.1-rc.2/go.mod h1:bTL+vXRiXOF5nW8AGMh0NLEkSQHS/EVG0RNX4YgSRkM=
 github.com/AES-Services/metalhost-sdk v0.1.1-rc.3 h1:N/Wk0DxnXYXbsdXIbzbuesGcj2vdjHymZikNwaUPaQE=
 github.com/AES-Services/metalhost-sdk v0.1.1-rc.3/go.mod h1:bTL+vXRiXOF5nW8AGMh0NLEkSQHS/EVG0RNX4YgSRkM=
+github.com/AES-Services/metalhost-sdk v0.2.0-rc.2 h1:Wd4U9Opb3+OtOX+SInnXZNovMgCyzS+rKwoZRqads6s=
+github.com/AES-Services/metalhost-sdk v0.2.0-rc.2/go.mod h1:bTL+vXRiXOF5nW8AGMh0NLEkSQHS/EVG0RNX4YgSRkM=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=

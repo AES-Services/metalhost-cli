@@ -115,7 +115,7 @@ func newAuditCommand(opts *rootOptions) *cobra.Command {
 		if since > 0 {
 			min = time.Now().Add(-since).Unix()
 		}
-		resp, err := client.SearchEvents(cmd.Context(), connect.NewRequest(&auditv1.SearchEventsRequest{Project: projectName, ActionPrefix: action, PrincipalPrefix: principal, MinTimestampUnix: min, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
+		resp, err := client.SearchEvents(cmd.Context(), connect.NewRequest(&auditv1.SearchEventsRequest{ProjectName: projectName, ActionPrefix: action, PrincipalPrefix: principal, MinTimestampUnix: min, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
 		if err != nil {
 			return err
 		}

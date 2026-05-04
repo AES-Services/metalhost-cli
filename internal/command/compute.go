@@ -220,7 +220,7 @@ func newImageCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListMachineImages(cmd.Context(), connect.NewRequest(&computev1.ListMachineImagesRequest{ProjectId: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
+		resp, err := client.ListMachineImages(cmd.Context(), connect.NewRequest(&computev1.ListMachineImagesRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
 		if err != nil {
 			return err
 		}
@@ -261,7 +261,7 @@ func newImageCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateMachineImage(cmd.Context(), connect.NewRequest(&computev1.CreateMachineImageRequest{ProjectId: projectName, ImageId: imageID, DisplayName: displayName, DatacenterName: region, SourceUrl: sourceURL}))
+		resp, err := client.CreateMachineImage(cmd.Context(), connect.NewRequest(&computev1.CreateMachineImageRequest{ProjectName: projectName, ImageId: imageID, DisplayName: displayName, DatacenterName: region, SourceUrl: sourceURL}))
 		if err != nil {
 			return err
 		}

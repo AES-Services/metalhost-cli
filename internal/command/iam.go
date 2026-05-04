@@ -64,7 +64,7 @@ func newAPIKeysCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.RevokeApiKey(cmd.Context(), connect.NewRequest(&iamv1.RevokeApiKeyRequest{Id: args[0]}))
+		resp, err := client.RevokeApiKey(cmd.Context(), connect.NewRequest(&iamv1.RevokeApiKeyRequest{Name: args[0]}))
 		if err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ func newSessionsCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.RevokeSession(cmd.Context(), connect.NewRequest(&iamv1.RevokeSessionRequest{SessionId: args[0]}))
+		resp, err := client.RevokeSession(cmd.Context(), connect.NewRequest(&iamv1.RevokeSessionRequest{Name: args[0]}))
 		if err != nil {
 			return err
 		}

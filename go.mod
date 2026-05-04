@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/AES-Services/metalhost-sdk v0.1.1-rc.3
+	github.com/AES-Services/metalhost-sdk v0.2.0-rc.2
 	github.com/spf13/cobra v1.10.1
 	gopkg.in/yaml.v3 v3.0.1
 )

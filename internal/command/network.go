@@ -33,7 +33,7 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListNetworks(cmd.Context(), connect.NewRequest(&networkv1.ListNetworksRequest{ProjectId: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
+		resp, err := client.ListNetworks(cmd.Context(), connect.NewRequest(&networkv1.ListNetworksRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
 		if err != nil {
 			return err
 		}
@@ -74,7 +74,7 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateNetwork(cmd.Context(), connect.NewRequest(&networkv1.CreateNetworkRequest{ProjectId: projectName, NetworkId: networkID, DisplayName: display, DatacenterName: region, SubnetCidr: cidr, VlanId: vlan}))
+		resp, err := client.CreateNetwork(cmd.Context(), connect.NewRequest(&networkv1.CreateNetworkRequest{ProjectName: projectName, NetworkId: networkID, DisplayName: display, DatacenterName: region, SubnetCidr: cidr, VlanId: vlan}))
 		if err != nil {
 			return err
 		}

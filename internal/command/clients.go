@@ -41,12 +41,12 @@ func (c *commandContext) projectClient() (projectv1connect.ProjectServiceClient,
 	return projectv1connect.NewProjectServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
-func (c *commandContext) opsClient() (opsv1connect.OpsServiceClient, error) {
+func (c *commandContext) opsClient() (opsv1connect.OperationsServiceClient, error) {
 	cfg, err := c.sdkConfig()
 	if err != nil {
 		return nil, err
 	}
-	return opsv1connect.NewOpsServiceClient(cfg.Client(), cfg.BaseURL()), nil
+	return opsv1connect.NewOperationsServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
 func (c *commandContext) computeClient() (computev1connect.ComputeServiceClient, error) {
@@ -57,20 +57,20 @@ func (c *commandContext) computeClient() (computev1connect.ComputeServiceClient,
 	return computev1connect.NewComputeServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
-func (c *commandContext) sshKeyClient() (computev1connect.SSHKeyServiceClient, error) {
+func (c *commandContext) sshKeyClient() (computev1connect.SSHKeysServiceClient, error) {
 	cfg, err := c.sdkConfig()
 	if err != nil {
 		return nil, err
 	}
-	return computev1connect.NewSSHKeyServiceClient(cfg.Client(), cfg.BaseURL()), nil
+	return computev1connect.NewSSHKeysServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
-func (c *commandContext) userDataSnippetClient() (computev1connect.UserDataSnippetServiceClient, error) {
+func (c *commandContext) userDataSnippetClient() (computev1connect.UserDataSnippetsServiceClient, error) {
 	cfg, err := c.sdkConfig()
 	if err != nil {
 		return nil, err
 	}
-	return computev1connect.NewUserDataSnippetServiceClient(cfg.Client(), cfg.BaseURL()), nil
+	return computev1connect.NewUserDataSnippetsServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
 func (c *commandContext) storageClient() (storagev1connect.StorageServiceClient, error) {
@@ -129,12 +129,12 @@ func (c *commandContext) bareMetalClient() (baremetalv1connect.BareMetalServiceC
 	return baremetalv1connect.NewBareMetalServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
-func (c *commandContext) webhooksClient() (webhooksv1connect.WebhookServiceClient, error) {
+func (c *commandContext) webhooksClient() (webhooksv1connect.WebhooksServiceClient, error) {
 	cfg, err := c.sdkConfig()
 	if err != nil {
 		return nil, err
 	}
-	return webhooksv1connect.NewWebhookServiceClient(cfg.Client(), cfg.BaseURL()), nil
+	return webhooksv1connect.NewWebhooksServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
 func (c *commandContext) supportClient() (supportv1connect.SupportServiceClient, error) {
