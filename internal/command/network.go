@@ -56,8 +56,7 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		}
 		return ctx.write(resp.Msg)
 	}}
-	var createProject, networkID, region, cidr, display string
-	var vlan int32
+	var createProject, networkID, region, display string
 	create := &cobra.Command{Use: "create", Short: "Create network", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -74,18 +73,16 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateNetwork(cmd.Context(), connect.NewRequest(&networkv1.CreateNetworkRequest{ProjectName: projectName, NetworkId: networkID, DisplayName: display, DatacenterName: region, SubnetCidr: cidr, VlanId: vlan}))
+		resp, err := client.CreateNetwork(cmd.Context(), connect.NewRequest(&networkv1.CreateNetworkRequest{ProjectName: projectName, NetworkId: networkID, DisplayName: display, DatacenterName: region}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
 	create.Flags().StringVar(&createProject, "project", "", "project")
-	create.Flags().StringVar(&networkID, "id", "", "network id")
+	create.Flags().StringVar(&networkID, "id", "", "network id (optional, auto-minted if empty)")
 	create.Flags().StringVar(&region, "region", "", "datacenter/region")
-	create.Flags().StringVar(&cidr, "cidr", "", "subnet CIDR")
 	create.Flags().StringVar(&display, "display-name", "", "display name")
-	create.Flags().Int32Var(&vlan, "vlan", 0, "VLAN id")
 	del := &cobra.Command{Use: "delete NAME", Short: "Delete network", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
