@@ -42,8 +42,9 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&project, "project", "", "project")
 
-	var createProject, networkID, region, display string
-	create := &cobra.Command{Use: "create", Short: "Create network", RunE: func(cmd *cobra.Command, _ []string) error {
+	var createProject, networkID, region, display, subnetV4, ipRangeStart, ipRangeEnd string
+	var netLabelPairs, netAnnotationPairs []string
+	create := &cobra.Command{Use: "create", Short: "Create a tenant network", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -59,16 +60,31 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateNetwork(cmd.Context(), connect.NewRequest(&networkv1.CreateNetworkRequest{ProjectName: projectName, NetworkId: networkID, DisplayName: display, DatacenterName: region}))
+		resp, err := client.CreateNetwork(cmd.Context(), connect.NewRequest(&networkv1.CreateNetworkRequest{
+			ProjectName:    projectName,
+			NetworkId:      networkID,
+			DisplayName:    display,
+			DatacenterName: region,
+			SubnetCidrV4:   subnetV4,
+			IpRangeStart:   ipRangeStart,
+			IpRangeEnd:     ipRangeEnd,
+			Labels:         stringMapFromPairs(netLabelPairs),
+			Annotations:    stringMapFromPairs(netAnnotationPairs),
+		}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
 	create.Flags().StringVar(&createProject, "project", "", "project")
-	create.Flags().StringVar(&networkID, "id", "", "network id (optional, auto-minted if empty)")
-	create.Flags().StringVar(&region, "region", "", "datacenter/region")
+	create.Flags().StringVar(&networkID, "id", "", "network id (optional; auto-minted if empty)")
+	create.Flags().StringVar(&region, "region", "", "datacenter, e.g. datacenters/us-dal-1")
 	create.Flags().StringVar(&display, "display-name", "", "display name")
+	create.Flags().StringVar(&subnetV4, "subnet-cidr-v4", "", "preferred IPv4 CIDR (/24 in v1; platform auto-allocates if empty)")
+	create.Flags().StringVar(&ipRangeStart, "ip-range-start", "", "first usable host within the subnet (optional)")
+	create.Flags().StringVar(&ipRangeEnd, "ip-range-end", "", "last usable host within the subnet (optional)")
+	create.Flags().StringSliceVar(&netLabelPairs, "label", nil, "labels as key=value (repeatable)")
+	create.Flags().StringSliceVar(&netAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 
 	return []*cobra.Command{list, create}
 }
@@ -99,6 +115,7 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 	var (
 		createProject, createDC, createVM, createDir, createDisplay string
 		createSources, createDestinations, createPorts              []string
+		fwLabelPairs, fwAnnotationPairs                             []string
 	)
 	create := &cobra.Command{Use: "create", Short: "Create a firewall rule", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
@@ -129,6 +146,8 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 			Destinations:   createDestinations,
 			Direction:      createDir,
 			DisplayName:    createDisplay,
+			Labels:         stringMapFromPairs(fwLabelPairs),
+			Annotations:    stringMapFromPairs(fwAnnotationPairs),
 		}))
 		if err != nil {
 			return err
@@ -143,6 +162,8 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 	create.Flags().StringSliceVar(&createSources, "source", nil, "source CIDR or VM (repeatable)")
 	create.Flags().StringSliceVar(&createDestinations, "destination", nil, "destination CIDR (egress only; repeatable)")
 	create.Flags().StringSliceVar(&createPorts, "port", nil, "PORT[/PROTO][-END] e.g. 22/tcp, 30000-32767/tcp (repeatable)")
+	create.Flags().StringSliceVar(&fwLabelPairs, "label", nil, "labels as key=value (repeatable)")
+	create.Flags().StringSliceVar(&fwAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	cmd.AddCommand(create)
 
 	del := &cobra.Command{Use: "delete NAME", Short: "Delete a firewall rule", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {

@@ -41,8 +41,8 @@ func newSSHKeyCommands(opts *rootOptions) *cobra.Command {
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&project, "project", "", "project")
 
-	var createProject, keyID, displayName, publicKey string
-	var labelPairs []string
+	var createProject, keyID, displayName, publicKey, idempotencyKey string
+	var labelPairs, annotationPairs []string
 	create := &cobra.Command{
 		Use: "create", Short: "Register an SSH public key",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -62,11 +62,13 @@ func newSSHKeyCommands(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.CreateSSHKey(cmd.Context(), connect.NewRequest(&computev1.CreateSSHKeyRequest{
-				ProjectName:   projectName,
-				SshKeyId:    keyID,
-				DisplayName: displayName,
-				PublicKey:   publicKey,
-				Labels:      stringMapFromPairs(labelPairs),
+				ProjectName:    projectName,
+				SshKeyId:       keyID,
+				DisplayName:    displayName,
+				PublicKey:      publicKey,
+				Labels:         stringMapFromPairs(labelPairs),
+				Annotations:    stringMapFromPairs(annotationPairs),
+				IdempotencyKey: idempotencyKey,
 			}))
 			if err != nil {
 				return err
@@ -79,6 +81,8 @@ func newSSHKeyCommands(opts *rootOptions) *cobra.Command {
 	create.Flags().StringVar(&displayName, "display-name", "", "display name")
 	create.Flags().StringVar(&publicKey, "public-key", "", "OpenSSH public key line")
 	create.Flags().StringSliceVar(&labelPairs, "label", nil, "labels as key=value (repeatable)")
+	create.Flags().StringSliceVar(&annotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
+	create.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "client-stamped idempotency key (optional)")
 
 	del := &cobra.Command{
 		Use: "delete NAME", Short: "Delete SSH key", Args: cobra.ExactArgs(1),

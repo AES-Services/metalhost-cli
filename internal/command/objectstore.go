@@ -50,8 +50,9 @@ func newObjectStoreCommand(opts *rootOptions) *cobra.Command {
 		}
 		return ctx.write(resp.Msg)
 	}})
-	var createProject string
-	create := &cobra.Command{Use: "create NAME", Short: "Create bucket", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var createProject, idempotencyKey string
+	var bucketLabelPairs, bucketAnnotationPairs []string
+	create := &cobra.Command{Use: "create NAME", Short: "Create a bucket", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -64,13 +65,22 @@ func newObjectStoreCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateBucket(cmd.Context(), connect.NewRequest(&objectv1.CreateBucketRequest{Name: args[0], ProjectName: projectName}))
+		resp, err := client.CreateBucket(cmd.Context(), connect.NewRequest(&objectv1.CreateBucketRequest{
+			Name:           args[0],
+			ProjectName:    projectName,
+			Labels:         stringMapFromPairs(bucketLabelPairs),
+			Annotations:    stringMapFromPairs(bucketAnnotationPairs),
+			IdempotencyKey: idempotencyKey,
+		}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
 	create.Flags().StringVar(&createProject, "project", "", "project")
+	create.Flags().StringSliceVar(&bucketLabelPairs, "label", nil, "labels as key=value (repeatable)")
+	create.Flags().StringSliceVar(&bucketAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
+	create.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "client-stamped idempotency key (optional)")
 	cmd.AddCommand(create)
 	cmd.AddCommand(&cobra.Command{Use: "delete NAME", Short: "Delete bucket", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
@@ -145,5 +155,29 @@ func newObjectCommand(opts *rootOptions) *cobra.Command {
 	}
 	addPresign("presign-upload", "Create presigned upload URL", true)
 	addPresign("presign-download", "Create presigned download URL", false)
+
+	var delKey, delIdem string
+	del := &cobra.Command{Use: "delete BUCKET", Short: "Delete an object by key", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		ctx, err := loadCommandContext(opts)
+		if err != nil {
+			return err
+		}
+		client, err := ctx.objectStoreClient()
+		if err != nil {
+			return err
+		}
+		resp, err := client.DeleteObject(cmd.Context(), connect.NewRequest(&objectv1.DeleteObjectRequest{
+			BucketName:     args[0],
+			ObjectKey:      delKey,
+			IdempotencyKey: delIdem,
+		}))
+		if err != nil {
+			return err
+		}
+		return ctx.write(resp.Msg)
+	}}
+	del.Flags().StringVar(&delKey, "key", "", "object key to delete (required)")
+	del.Flags().StringVar(&delIdem, "idempotency-key", "", "client-stamped idempotency key (optional)")
+	cmd.AddCommand(del)
 	return cmd
 }

@@ -105,6 +105,7 @@ func AttachCustomerCommands(cmd *cobra.Command, commandOpts RootCommandOptions) 
 // customer CLI exposes. Both NewRootCommandWithOptions and
 // AttachCustomerCommands route through it.
 func addCustomerCommands(cmd *cobra.Command, opts *rootOptions) {
+	cmd.AddCommand(newInitCommand(opts))
 	cmd.AddCommand(newAuthCommand(opts))
 	cmd.AddCommand(newIAMCommand(opts))
 	cmd.AddCommand(newCatalogCommand(opts))

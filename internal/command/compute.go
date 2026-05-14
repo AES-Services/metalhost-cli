@@ -62,12 +62,16 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 		return ctx.write(resp.Msg)
 	}}
 
-	var createProject, region, sku, image, bootURL, sshKey, userData string
-	var diskSize int32
-	var networks, sshKeyNames []string
-	var billingModeRaw string
-	var autorenew bool
-	create := &cobra.Command{Use: "create", Short: "Create VM", RunE: func(cmd *cobra.Command, _ []string) error {
+	var (
+		createProject, region, sku                            string
+		image, bootURL, bootDiskName                          string
+		sshKey, userData, hostname                            string
+		network, billingModeRaw, cpuClass                     string
+		sshKeyNames, labelPairs, annotationPairs              []string
+		diskSize, vcpus, ramGib                               int32
+		autorenew, assignPubIPv4                              bool
+	)
+	create := &cobra.Command{Use: "create", Short: "Create a VM", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -83,38 +87,58 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		if image != "" && bootURL != "" {
-			return fmt.Errorf("specify only one of --image or --boot-url for the boot disk source")
+
+		// Boot disk source: exactly one of --image / --boot-url / --boot-disk-name.
+		// --boot-disk-name attaches an existing Disk and skips the inline BootDiskSpec entirely.
+		bootSources := 0
+		if image != "" {
+			bootSources++
 		}
-		if image == "" && bootURL == "" {
-			return fmt.Errorf("boot disk source required: set --image (machine image resource name) or --boot-url (raw image URL)")
-		}
-		if diskSize < 1 {
-			return fmt.Errorf("--disk-size-gib must be at least 1 (boot disk is a first-class Disk on the API)")
-		}
-		if len(networks) > 1 {
-			return fmt.Errorf("--network accepts a single network (single-NIC VMs); got %d values", len(networks))
-		}
-		boot := &computev1.BootDiskSpec{SizeGib: diskSize}
 		if bootURL != "" {
-			boot.FromImageUrl = bootURL
-		} else {
-			boot.FromImageName = image
+			bootSources++
 		}
+		if bootDiskName != "" {
+			bootSources++
+		}
+		if bootSources != 1 {
+			return fmt.Errorf("specify exactly one of --image, --boot-url, or --boot-disk-name")
+		}
+
 		req := &computev1.CreateVirtualMachineRequest{
-			ProjectName:    projectName,
-			DatacenterName: region,
-			InstanceType:   sku,
-			SshPubkey:      sshKey,
-			UserData:       userData,
-			SshKeyNames:    sshKeyNames,
-			BillingMode:    billingMode,
-			Autorenew:      autorenew,
-			BootDisk:       boot,
+			ProjectName:      projectName,
+			DatacenterName:   region,
+			InstanceType:     sku,
+			SshPubkey:        sshKey,
+			UserData:         userData,
+			SshKeyNames:      sshKeyNames,
+			BillingMode:      billingMode,
+			Autorenew:        autorenew,
+			Hostname:         hostname,
+			AssignPublicIpv4: assignPubIPv4,
+			NetworkName:      network,
+			Vcpus:            vcpus,
+			RamGib:           ramGib,
+			CpuClass:         cpuClass,
+			Labels:           stringMapFromPairs(labelPairs),
+			Annotations:      stringMapFromPairs(annotationPairs),
 		}
-		if len(networks) == 1 {
-			req.NetworkName = networks[0]
+
+		// Inline boot disk vs pre-existing disk
+		if bootDiskName != "" {
+			req.BootDiskName = bootDiskName
+		} else {
+			if diskSize < 1 {
+				return fmt.Errorf("--disk-size-gib must be at least 1 when using --image or --boot-url")
+			}
+			boot := &computev1.BootDiskSpec{SizeGib: diskSize}
+			if bootURL != "" {
+				boot.FromImageUrl = bootURL
+			} else {
+				boot.FromImageName = image
+			}
+			req.BootDisk = boot
 		}
+
 		client, err := ctx.computeClient()
 		if err != nil {
 			return err
@@ -125,18 +149,26 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 		}
 		return ctx.write(resp.Msg)
 	}}
-	create.Flags().StringVar(&createProject, "project", "", "project")
-	create.Flags().StringVar(&region, "region", "", "datacenter/region")
-	create.Flags().StringVar(&sku, "sku", "", "instance SKU")
-	create.Flags().StringVar(&image, "image", "", "machine image name")
-	create.Flags().StringVar(&bootURL, "boot-url", "", "boot image URL")
-	create.Flags().Int32Var(&diskSize, "disk-size-gib", 0, "boot disk size GiB")
-	create.Flags().StringSliceVar(&networks, "network", nil, "tenant network resource name to attach (single-NIC; pass once)")
-	create.Flags().StringVar(&sshKey, "ssh-key", "", "SSH public key")
-	create.Flags().StringVar(&userData, "user-data", "", "cloud-init user data")
-	create.Flags().StringSliceVar(&sshKeyNames, "ssh-key-name", nil, "registered SSH key resource name(s), e.g. projects/my-proj/ssh-keys/my-key")
-	create.Flags().StringVar(&billingModeRaw, "billing-mode", "", "BILLING_MODE_HOURLY (default if empty), BILLING_MODE_MONTHLY_1, monthly-1, …")
+	create.Flags().StringVar(&createProject, "project", "", "project (defaults to active profile project)")
+	create.Flags().StringVar(&region, "region", "", "datacenter, e.g. datacenters/us-dal-1 (defaults to profile region)")
+	create.Flags().StringVar(&sku, "sku", "", "SKU template hint, e.g. skus/vm.cascadelake.c2m8 (configurator flags override)")
+	create.Flags().Int32Var(&vcpus, "vcpus", 0, "configurator: vCPU count (overrides --sku shape)")
+	create.Flags().Int32Var(&ramGib, "ram-gib", 0, "configurator: RAM GiB (overrides --sku shape)")
+	create.Flags().StringVar(&cpuClass, "cpu-class", "", "configurator: CPU class, e.g. cascadelake (required when --sku is unset)")
+	create.Flags().StringVar(&image, "image", "", "registered MachineImage resource name, e.g. projects/p/images/ubuntu-24-04")
+	create.Flags().StringVar(&bootURL, "boot-url", "", "raw boot image URL (alternative to --image)")
+	create.Flags().StringVar(&bootDiskName, "boot-disk-name", "", "use a pre-existing Disk as boot, e.g. projects/p/disks/my-disk (mutually exclusive with --image/--boot-url)")
+	create.Flags().Int32Var(&diskSize, "disk-size-gib", 0, "boot disk size GiB (required with --image/--boot-url)")
+	create.Flags().StringVar(&hostname, "hostname", "", "VM hostname (DNS-1123 label, ≤63 chars; defaults to a UUID slug)")
+	create.Flags().BoolVar(&assignPubIPv4, "assign-public-ipv4", false, "allocate a public IPv4 from the DC pool")
+	create.Flags().StringVar(&network, "network", "", "tenant network resource name, e.g. projects/p/networks/default (defaults to project's default)")
+	create.Flags().StringVar(&sshKey, "ssh-key", "", "OpenSSH public key line (inline; alternative to --ssh-key-name)")
+	create.Flags().StringSliceVar(&sshKeyNames, "ssh-key-name", nil, "registered SSH key resource name(s), e.g. projects/p/ssh-keys/laptop (repeatable)")
+	create.Flags().StringVar(&userData, "user-data", "", "cloud-init user-data (#cloud-config YAML)")
+	create.Flags().StringVar(&billingModeRaw, "billing-mode", "", "BILLING_MODE_HOURLY (default), BILLING_MODE_MONTHLY_1, monthly-3, monthly-6, monthly-12")
 	create.Flags().BoolVar(&autorenew, "autorenew", false, "auto-renew prepaid monthly term (ignored for hourly billing)")
+	create.Flags().StringSliceVar(&labelPairs, "label", nil, "labels as key=value (repeatable)")
+	create.Flags().StringSliceVar(&annotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 
 	return []*cobra.Command{
 		list, get, create,
@@ -207,6 +239,7 @@ func vmReimageCommand(opts *rootOptions) *cobra.Command {
 
 func vmCloneCommand(opts *rootOptions) *cobra.Command {
 	var src, displayName, sku string
+	var labelPairs, annotationPairs []string
 	cmd := &cobra.Command{Use: "clone", Short: "Clone a VM (disk-level copy)", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -220,6 +253,8 @@ func vmCloneCommand(opts *rootOptions) *cobra.Command {
 			SourceVmName:      src,
 			TargetDisplayName: displayName,
 			InstanceType:      sku,
+			Labels:            stringMapFromPairs(labelPairs),
+			Annotations:       stringMapFromPairs(annotationPairs),
 		}))
 		if err != nil {
 			return err
@@ -229,6 +264,8 @@ func vmCloneCommand(opts *rootOptions) *cobra.Command {
 	cmd.Flags().StringVar(&src, "source", "", "source VM resource name (required)")
 	cmd.Flags().StringVar(&displayName, "display-name", "", "display name for the clone (required)")
 	cmd.Flags().StringVar(&sku, "sku", "", "instance type override (defaults to source SKU)")
+	cmd.Flags().StringSliceVar(&labelPairs, "label", nil, "labels for the new VM as key=value (repeatable; NOT inherited from source)")
+	cmd.Flags().StringSliceVar(&annotationPairs, "annotation", nil, "annotations as key=value (repeatable; NOT inherited from source)")
 	return cmd
 }
 
@@ -333,6 +370,7 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "snapshot", Aliases: []string{"snapshots", "backup", "backups"}, Short: "Manage VM snapshots / backups"}
 
 	var snapVM, snapDisplay string
+	var snapLabelPairs, snapAnnotationPairs []string
 	create := &cobra.Command{Use: "create", Short: "Create a snapshot of a VM", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -342,7 +380,12 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.SnapshotVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.SnapshotVirtualMachineRequest{VmName: snapVM, DisplayName: snapDisplay}))
+		resp, err := client.SnapshotVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.SnapshotVirtualMachineRequest{
+			VmName:      snapVM,
+			DisplayName: snapDisplay,
+			Labels:      stringMapFromPairs(snapLabelPairs),
+			Annotations: stringMapFromPairs(snapAnnotationPairs),
+		}))
 		if err != nil {
 			return err
 		}
@@ -350,6 +393,8 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 	}}
 	create.Flags().StringVar(&snapVM, "vm", "", "source VM resource name (required)")
 	create.Flags().StringVar(&snapDisplay, "display-name", "", "display name for the snapshot (required)")
+	create.Flags().StringSliceVar(&snapLabelPairs, "label", nil, "labels as key=value (repeatable)")
+	create.Flags().StringSliceVar(&snapAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	cmd.AddCommand(create)
 
 	var pages pageFlags
