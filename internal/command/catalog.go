@@ -82,29 +82,7 @@ func newDatacenterCommand(opts *rootOptions) *cobra.Command {
 }
 
 func newPricingCommand(opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "pricing", Short: "Pricing components and VM quotes"}
-	var currency string
-	components := &cobra.Command{
-		Use:   "components",
-		Short: "List pricing components (per-vCPU, per-GiB-RAM, per-GiB-NVMe, per-IPv4)",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadCommandContext(opts)
-			if err != nil {
-				return err
-			}
-			client, err := ctx.catalogClient()
-			if err != nil {
-				return err
-			}
-			resp, err := client.ListPricingComponents(cmd.Context(), connect.NewRequest(&catalogv1.ListPricingComponentsRequest{Currency: currency}))
-			if err != nil {
-				return err
-			}
-			return ctx.write(resp.Msg)
-		},
-	}
-	components.Flags().StringVar(&currency, "currency", "", "USD (default) or USDC")
-	cmd.AddCommand(components)
+	cmd := &cobra.Command{Use: "pricing", Short: "Quote VM configurations against current pricing"}
 
 	var vcpus, ramGib, bootDiskGib, extraDiskGib, publicIPv4Count int32
 	var cpuClass, quoteCurrency string

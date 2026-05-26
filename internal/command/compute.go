@@ -63,13 +63,13 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 	}}
 
 	var (
-		createProject, region, sku                            string
-		image, bootURL, bootDiskName                          string
-		sshKey, userData, hostname                            string
-		network, billingModeRaw, cpuClass                     string
-		sshKeyNames, labelPairs, annotationPairs              []string
-		diskSize, vcpus, ramGib                               int32
-		autorenew, assignPubIPv4                              bool
+		createProject, region                    string
+		bootURL, bootDiskName                    string
+		sshKey, userData, hostname               string
+		network, billingModeRaw, cpuClass        string
+		sshKeyNames, labelPairs, annotationPairs []string
+		diskSize, vcpus, ramGib                  int32
+		autorenew, assignPubIPv4                 bool
 	)
 	create := &cobra.Command{Use: "create", Short: "Create a VM", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
@@ -88,12 +88,9 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 			return err
 		}
 
-		// Boot disk source: exactly one of --image / --boot-url / --boot-disk-name.
+		// Boot disk source: exactly one of --boot-url / --boot-disk-name.
 		// --boot-disk-name attaches an existing Disk and skips the inline BootDiskSpec entirely.
 		bootSources := 0
-		if image != "" {
-			bootSources++
-		}
 		if bootURL != "" {
 			bootSources++
 		}
@@ -101,13 +98,15 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 			bootSources++
 		}
 		if bootSources != 1 {
-			return fmt.Errorf("specify exactly one of --image, --boot-url, or --boot-disk-name")
+			return fmt.Errorf("specify exactly one of --boot-url or --boot-disk-name")
 		}
 
+		if vcpus <= 0 || ramGib <= 0 || cpuClass == "" {
+			return fmt.Errorf("--vcpus, --ram-gib, and --cpu-class are required")
+		}
 		req := &computev1.CreateVirtualMachineRequest{
 			ProjectName:      projectName,
 			DatacenterName:   region,
-			InstanceType:     sku,
 			SshPubkey:        sshKey,
 			UserData:         userData,
 			SshKeyNames:      sshKeyNames,
@@ -128,15 +127,12 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 			req.BootDiskName = bootDiskName
 		} else {
 			if diskSize < 1 {
-				return fmt.Errorf("--disk-size-gib must be at least 1 when using --image or --boot-url")
+				return fmt.Errorf("--disk-size-gib must be at least 1 when using --boot-url")
 			}
-			boot := &computev1.BootDiskSpec{SizeGib: diskSize}
-			if bootURL != "" {
-				boot.FromImageUrl = bootURL
-			} else {
-				boot.FromImageName = image
+			req.BootDisk = &computev1.BootDiskSpec{
+				SizeGib:      diskSize,
+				FromImageUrl: bootURL,
 			}
-			req.BootDisk = boot
 		}
 
 		client, err := ctx.computeClient()
@@ -151,14 +147,12 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 	}}
 	create.Flags().StringVar(&createProject, "project", "", "project (defaults to active profile project)")
 	create.Flags().StringVar(&region, "region", "", "datacenter, e.g. datacenters/us-dal-1 (defaults to profile region)")
-	create.Flags().StringVar(&sku, "sku", "", "SKU template hint, e.g. skus/vm.cascadelake.c2m8 (configurator flags override)")
-	create.Flags().Int32Var(&vcpus, "vcpus", 0, "configurator: vCPU count (overrides --sku shape)")
-	create.Flags().Int32Var(&ramGib, "ram-gib", 0, "configurator: RAM GiB (overrides --sku shape)")
-	create.Flags().StringVar(&cpuClass, "cpu-class", "", "configurator: CPU class, e.g. cascadelake (required when --sku is unset)")
-	create.Flags().StringVar(&image, "image", "", "registered MachineImage resource name, e.g. projects/p/images/ubuntu-24-04")
-	create.Flags().StringVar(&bootURL, "boot-url", "", "raw boot image URL (alternative to --image)")
-	create.Flags().StringVar(&bootDiskName, "boot-disk-name", "", "use a pre-existing Disk as boot, e.g. projects/p/disks/my-disk (mutually exclusive with --image/--boot-url)")
-	create.Flags().Int32Var(&diskSize, "disk-size-gib", 0, "boot disk size GiB (required with --image/--boot-url)")
+	create.Flags().Int32Var(&vcpus, "vcpus", 0, "vCPU count (required)")
+	create.Flags().Int32Var(&ramGib, "ram-gib", 0, "RAM GiB (required)")
+	create.Flags().StringVar(&cpuClass, "cpu-class", "", "CPU class, e.g. cascadelake (required)")
+	create.Flags().StringVar(&bootURL, "boot-url", "", "streamable raw boot image URL (CDI http source)")
+	create.Flags().StringVar(&bootDiskName, "boot-disk-name", "", "use a pre-existing Disk as boot, e.g. projects/p/disks/my-disk (mutually exclusive with --boot-url)")
+	create.Flags().Int32Var(&diskSize, "disk-size-gib", 0, "boot disk size GiB (required with --boot-url)")
 	create.Flags().StringVar(&hostname, "hostname", "", "VM hostname (DNS-1123 label, ≤63 chars; defaults to a UUID slug)")
 	create.Flags().BoolVar(&assignPubIPv4, "assign-public-ipv4", false, "allocate a public IPv4 from the DC pool")
 	create.Flags().StringVar(&network, "network", "", "tenant network resource name, e.g. projects/p/networks/default (defaults to project's default)")
@@ -189,28 +183,41 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 }
 
 func vmResizeCommand(opts *rootOptions) *cobra.Command {
-	var sku string
-	cmd := &cobra.Command{Use: "resize NAME", Short: "Resize a VM (change SKU)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var (
+		vcpus, ramGib int32
+		cpuClass      string
+	)
+	cmd := &cobra.Command{Use: "resize NAME", Short: "Resize a VM (change vCPU/RAM/CPU class)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
+		}
+		if vcpus <= 0 || ramGib <= 0 || cpuClass == "" {
+			return fmt.Errorf("--vcpus, --ram-gib, and --cpu-class are required")
 		}
 		client, err := ctx.computeClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.ResizeVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.ResizeVirtualMachineRequest{Name: args[0], InstanceType: sku}))
+		resp, err := client.ResizeVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.ResizeVirtualMachineRequest{
+			Name:     args[0],
+			Vcpus:    vcpus,
+			RamGib:   ramGib,
+			CpuClass: cpuClass,
+		}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
-	cmd.Flags().StringVar(&sku, "sku", "", "new instance type, e.g. skus/vm.cascadelake.c8m16 (required)")
+	cmd.Flags().Int32Var(&vcpus, "vcpus", 0, "new vCPU count (required)")
+	cmd.Flags().Int32Var(&ramGib, "ram-gib", 0, "new RAM GiB (required)")
+	cmd.Flags().StringVar(&cpuClass, "cpu-class", "", "new CPU class, e.g. cascadelake (required)")
 	return cmd
 }
 
 func vmReimageCommand(opts *rootOptions) *cobra.Command {
-	var image, bootURL, token string
+	var bootURL, token string
 	cmd := &cobra.Command{Use: "reimage NAME", Short: "Reimage a VM (destroys data — requires confirmation token)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -222,7 +229,6 @@ func vmReimageCommand(opts *rootOptions) *cobra.Command {
 		}
 		resp, err := client.ReimageVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.ReimageVirtualMachineRequest{
 			Name:              args[0],
-			ImageName:         image,
 			BootImageUrl:      bootURL,
 			ConfirmationToken: token,
 		}))
@@ -231,14 +237,13 @@ func vmReimageCommand(opts *rootOptions) *cobra.Command {
 		}
 		return ctx.write(resp.Msg)
 	}}
-	cmd.Flags().StringVar(&image, "image", "", "new MachineImage resource name (optional; reuses original when empty)")
-	cmd.Flags().StringVar(&bootURL, "boot-url", "", "raw boot image URL (alternative to --image)")
+	cmd.Flags().StringVar(&bootURL, "boot-url", "", "streamable raw boot image URL (empty reuses original boot source)")
 	cmd.Flags().StringVar(&token, "confirm", "", "confirmation token — must be REIMAGE/<vm-resource-name>")
 	return cmd
 }
 
 func vmCloneCommand(opts *rootOptions) *cobra.Command {
-	var src, displayName, sku string
+	var src, displayName string
 	var labelPairs, annotationPairs []string
 	cmd := &cobra.Command{Use: "clone", Short: "Clone a VM (disk-level copy)", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
@@ -252,7 +257,6 @@ func vmCloneCommand(opts *rootOptions) *cobra.Command {
 		resp, err := client.CloneVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.CloneVirtualMachineRequest{
 			SourceVmName:      src,
 			TargetDisplayName: displayName,
-			InstanceType:      sku,
 			Labels:            stringMapFromPairs(labelPairs),
 			Annotations:       stringMapFromPairs(annotationPairs),
 		}))
@@ -263,7 +267,6 @@ func vmCloneCommand(opts *rootOptions) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&src, "source", "", "source VM resource name (required)")
 	cmd.Flags().StringVar(&displayName, "display-name", "", "display name for the clone (required)")
-	cmd.Flags().StringVar(&sku, "sku", "", "instance type override (defaults to source SKU)")
 	cmd.Flags().StringSliceVar(&labelPairs, "label", nil, "labels for the new VM as key=value (repeatable; NOT inherited from source)")
 	cmd.Flags().StringSliceVar(&annotationPairs, "annotation", nil, "annotations as key=value (repeatable; NOT inherited from source)")
 	return cmd
@@ -439,9 +442,13 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 		return ctx.write(resp.Msg)
 	}})
 
-	cmd.AddCommand(&cobra.Command{Use: "delete NAME", Short: "Delete a VM snapshot", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var snapDelYes bool
+	snapDelete := &cobra.Command{Use: "delete NAME", Short: "Delete a VM snapshot", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
+			return err
+		}
+		if err := confirmDestructive(cmd, snapDelYes, "Delete VM snapshot", args[0]); err != nil {
 			return err
 		}
 		client, err := ctx.computeClient()
@@ -453,13 +460,15 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 			return err
 		}
 		return ctx.write(resp.Msg)
-	}})
+	}}
+	snapDelete.Flags().BoolVar(&snapDelYes, "yes", false, "skip the interactive confirmation prompt")
+	cmd.AddCommand(snapDelete)
 
 	return cmd
 }
 
 func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
-	var snapshot, displayName, hostname, sku, billingModeRaw, sshKey, userData string
+	var snapshot, displayName, hostname, billingModeRaw, userData string
 	var sshKeyNames []string
 	var assignPubIPv4, autorenew bool
 	var vcpus, ramGib int32
@@ -481,7 +490,6 @@ func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
 			VmSnapshotName:    snapshot,
 			TargetDisplayName: displayName,
 			Hostname:          hostname,
-			InstanceType:      sku,
 			Vcpus:             vcpus,
 			RamGib:            ramGib,
 			CpuClass:          cpuClass,
@@ -491,7 +499,6 @@ func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
 			SshKeyNames:       sshKeyNames,
 			UserData:          userData,
 		}))
-		_ = sshKey
 		if err != nil {
 			return err
 		}
@@ -500,7 +507,6 @@ func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
 	cmd.Flags().StringVar(&snapshot, "snapshot", "", "source VmSnapshot resource name (required)")
 	cmd.Flags().StringVar(&displayName, "display-name", "", "display name for the new VM (required)")
 	cmd.Flags().StringVar(&hostname, "hostname", "", "hostname (defaults to sanitised display name)")
-	cmd.Flags().StringVar(&sku, "sku", "", "instance type override (defaults to source VM's SKU)")
 	cmd.Flags().Int32Var(&vcpus, "vcpus", 0, "configurator override: vCPUs")
 	cmd.Flags().Int32Var(&ramGib, "ram-gib", 0, "configurator override: RAM GiB")
 	cmd.Flags().StringVar(&cpuClass, "cpu-class", "", "configurator override: CPU class")
@@ -513,21 +519,31 @@ func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
 }
 
 func vmDeleteCommand(opts *rootOptions) *cobra.Command {
-	return &cobra.Command{Use: "delete NAME", Short: "Delete VM", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var yes, deleteDisks bool
+	cmd := &cobra.Command{Use: "delete NAME", Short: "Delete VM", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
+			return err
+		}
+		if err := confirmDestructive(cmd, yes, "Delete VM", args[0]); err != nil {
 			return err
 		}
 		client, err := ctx.computeClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.DeleteVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.DeleteVirtualMachineRequest{Name: args[0]}))
+		resp, err := client.DeleteVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.DeleteVirtualMachineRequest{
+			Name:                args[0],
+			DeleteAttachedDisks: deleteDisks,
+		}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
+	cmd.Flags().BoolVar(&yes, "yes", false, "skip the interactive confirmation prompt")
+	cmd.Flags().BoolVar(&deleteDisks, "delete-disks", false, "also delete the attached disks (boot + data) instead of detaching them back to AVAILABLE")
+	return cmd
 }
 
 func vmStartCommand(opts *rootOptions) *cobra.Command {

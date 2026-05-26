@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -168,13 +169,17 @@ func newProjectCreateCommand(opts *rootOptions) *cobra.Command {
 }
 
 func newProjectDeleteCommand(opts *rootOptions) *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	cmd := &cobra.Command{
 		Use:   "delete NAME",
 		Short: "Delete project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := loadCommandContext(opts)
 			if err != nil {
+				return err
+			}
+			if err := confirmDestructive(cmd, yes, "Delete project (and all resources within)", args[0]); err != nil {
 				return err
 			}
 			client, err := ctx.projectClient()
@@ -188,6 +193,8 @@ func newProjectDeleteCommand(opts *rootOptions) *cobra.Command {
 			return ctx.write(resp.Msg)
 		},
 	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "skip the interactive confirmation prompt")
+	return cmd
 }
 
 func newOrgCommand(opts *rootOptions) *cobra.Command {
@@ -238,9 +245,10 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 	cmd.AddCommand(create)
 
 	var updateOrgDisplay string
+	var updateOrgRequireMFA bool
 	updateOrg := &cobra.Command{
 		Use:   "update NAME",
-		Short: "Update an organization's display name",
+		Short: "Update an organization (display name and/or MFA enforcement)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := loadCommandContext(opts)
@@ -252,8 +260,20 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			req := &projectv1.UpdateOrganizationRequest{Name: args[0]}
-			d := updateOrgDisplay
-			req.DisplayName = &d
+			// Apply each optional field only when the operator explicitly passed the flag;
+			// cobra's Changed() lets us distinguish "set to empty/false" from "unset". This
+			// matters for require_mfa where false is a meaningful operator choice.
+			if cmd.Flags().Changed("display-name") {
+				d := updateOrgDisplay
+				req.DisplayName = &d
+			}
+			if cmd.Flags().Changed("require-mfa") {
+				r := updateOrgRequireMFA
+				req.RequireMfa = &r
+			}
+			if req.DisplayName == nil && req.RequireMfa == nil {
+				return errors.New("at least one of --display-name or --require-mfa must be set")
+			}
 			resp, err := client.UpdateOrganization(cmd.Context(), connect.NewRequest(req))
 			if err != nil {
 				return err
@@ -261,16 +281,21 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			return ctx.write(resp.Msg)
 		},
 	}
-	updateOrg.Flags().StringVar(&updateOrgDisplay, "display-name", "", "new display name (required)")
+	updateOrg.Flags().StringVar(&updateOrgDisplay, "display-name", "", "new display name")
+	updateOrg.Flags().BoolVar(&updateOrgRequireMFA, "require-mfa", false, "require MFA at login for all members with an enrolled TOTP device (P0-4)")
 	cmd.AddCommand(updateOrg)
 
-	cmd.AddCommand(&cobra.Command{
+	var orgDelYes bool
+	orgDelete := &cobra.Command{
 		Use:   "delete NAME",
 		Short: "Delete organization",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := loadCommandContext(opts)
 			if err != nil {
+				return err
+			}
+			if err := confirmDestructive(cmd, orgDelYes, "Delete organization (and every project within)", args[0]); err != nil {
 				return err
 			}
 			client, err := ctx.projectClient()
@@ -283,7 +308,9 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			}
 			return ctx.write(resp.Msg)
 		},
-	})
+	}
+	orgDelete.Flags().BoolVar(&orgDelYes, "yes", false, "skip the interactive confirmation prompt")
+	cmd.AddCommand(orgDelete)
 
 	var activityPages pageFlags
 	activity := &cobra.Command{

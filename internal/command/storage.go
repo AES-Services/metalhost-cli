@@ -102,9 +102,13 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 	create.Flags().StringSliceVar(&annotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	cmd.AddCommand(create)
 
-	cmd.AddCommand(&cobra.Command{Use: "delete NAME", Short: "Delete disk", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var diskDelYes bool
+	diskDelete := &cobra.Command{Use: "delete NAME", Short: "Delete disk", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
+			return err
+		}
+		if err := confirmDestructive(cmd, diskDelYes, "Delete disk", args[0]); err != nil {
 			return err
 		}
 		client, err := ctx.storageClient()
@@ -116,7 +120,9 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 			return err
 		}
 		return ctx.write(resp.Msg)
-	}})
+	}}
+	diskDelete.Flags().BoolVar(&diskDelYes, "yes", false, "skip the interactive confirmation prompt")
+	cmd.AddCommand(diskDelete)
 
 	var resizeSize int32
 	resize := &cobra.Command{Use: "resize NAME", Short: "Resize a disk", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -271,9 +277,13 @@ func newFileShareCommand(opts *rootOptions) *cobra.Command {
 	create.Flags().StringSliceVar(&fsAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	cmd.AddCommand(create)
 
-	cmd.AddCommand(&cobra.Command{Use: "delete NAME", Short: "Delete a file share", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var fsDelYes bool
+	fsDelete := &cobra.Command{Use: "delete NAME", Short: "Delete a file share", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
+			return err
+		}
+		if err := confirmDestructive(cmd, fsDelYes, "Delete file share", args[0]); err != nil {
 			return err
 		}
 		client, err := ctx.storageClient()
@@ -285,7 +295,9 @@ func newFileShareCommand(opts *rootOptions) *cobra.Command {
 			return err
 		}
 		return ctx.write(resp.Msg)
-	}})
+	}}
+	fsDelete.Flags().BoolVar(&fsDelYes, "yes", false, "skip the interactive confirmation prompt")
+	cmd.AddCommand(fsDelete)
 
 	return cmd
 }

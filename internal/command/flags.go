@@ -2,6 +2,7 @@ package command
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -37,6 +38,22 @@ func requireProject(ctx *commandContext, explicit string) (string, error) {
 		return ctx.profile.Project, nil
 	}
 	return "", errors.New("project is required; pass --project or set METALHOST_PROJECT/profile default")
+}
+
+// confirmDestructive is the shared --yes / interactive prompt guard for irreversible
+// operations (delete vm, delete disk, delete project, delete org). `yes=true` skips the
+// prompt; otherwise we read y/yes from stdin. The `target` is shown verbatim in the prompt
+// so the user can sanity-check what's being destroyed before confirming.
+func confirmDestructive(cmd *cobra.Command, yes bool, action, target string) error {
+	if yes {
+		return nil
+	}
+	pr := newPromptReader(cmd)
+	ans := strings.ToLower(strings.TrimSpace(pr.readLine(fmt.Sprintf("%s %s — this is irreversible. Continue? [y/N]: ", action, target))))
+	if ans != "y" && ans != "yes" {
+		return errors.New("aborted")
+	}
+	return nil
 }
 
 func stringMapFromPairs(pairs []string) map[string]string {

@@ -35,7 +35,50 @@ func authFlowsCommands(auth *cobra.Command, opts *rootOptions) {
 	auth.AddCommand(newSignupCommand(opts))
 	auth.AddCommand(newVerifyEmailCommand(opts))
 	auth.AddCommand(newLinkOidcCommand(opts))
+	auth.AddCommand(newMFASubmitCommand(opts))
 }
+
+// newMFASubmitCommand exposes SubmitMFAChallenge for scripted / non-interactive callers.
+// Interactive logins call SubmitMFAChallenge automatically when Login returns an
+// mfa_challenge_token (see passwordLogin / oidcLogin); this subcommand exists for the
+// "I have a challenge token from a separate Login call" headless path.
+func newMFASubmitCommand(opts *rootOptions) *cobra.Command {
+	var challenge, totp, recovery string
+	cmd := &cobra.Command{
+		Use:   "mfa-submit",
+		Short: "Submit an MFA challenge (TOTP or recovery code) to complete a two-leg login.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			endpoint := strings.TrimSpace(opts.endpoint)
+			if endpoint == "" {
+				endpoint = strings.TrimSpace(os.Getenv("METALHOST_ENDPOINT"))
+			}
+			if endpoint == "" {
+				return errors.New("--endpoint or METALHOST_ENDPOINT is required")
+			}
+			if strings.TrimSpace(challenge) == "" {
+				return errors.New("--challenge is required")
+			}
+			if strings.TrimSpace(totp) == "" && strings.TrimSpace(recovery) == "" {
+				return errors.New("one of --totp or --recovery is required")
+			}
+			client := iamClientForEndpoint(endpoint, opts.userAgentString())
+			resp, err := client.SubmitMFAChallenge(cmd.Context(), connect.NewRequest(&iamv1.SubmitMFAChallengeRequest{
+				ChallengeToken: challenge,
+				TotpCode:       strings.TrimSpace(totp),
+				RecoveryCode:   strings.TrimSpace(recovery),
+			}))
+			if err != nil {
+				return err
+			}
+			return saveLoginResult(cmd, opts, endpoint, resp.Msg.GetPrincipal(), resp.Msg.GetSecret(), "", "")
+		},
+	}
+	cmd.Flags().StringVar(&challenge, "challenge", "", "challenge token returned by a prior Login")
+	cmd.Flags().StringVar(&totp, "totp", "", "6-digit TOTP code from the authenticator app")
+	cmd.Flags().StringVar(&recovery, "recovery", "", "single-use recovery code (consumes on use)")
+	return cmd
+}
+
 
 // newSignupCommand prompts for email + password (or accepts via flags), calls SignUp, and
 // instructs the user to check their email + run `mh auth verify --token`. The endpoint must
@@ -159,7 +202,42 @@ func passwordLogin(cmd *cobra.Command, opts *rootOptions, email string) error {
 	if err != nil {
 		return err
 	}
+	// P0-4 two-leg flow: when the principal's org has require_mfa=TRUE and the principal has
+	// an ACTIVE TOTP device, the server returns ONLY mfa_challenge_token. We prompt for the
+	// TOTP code (or recovery code) and call SubmitMFAChallenge to mint the session key.
+	if challenge := strings.TrimSpace(resp.Msg.GetMfaChallengeToken()); challenge != "" {
+		principal, secret, err := completeMFAChallenge(cmd, pr, client, challenge)
+		if err != nil {
+			return err
+		}
+		return saveLoginResult(cmd, opts, endpoint, principal, secret, "", "")
+	}
 	return saveLoginResult(cmd, opts, endpoint, resp.Msg.GetPrincipal(), resp.Msg.GetSecret(), "", "")
+}
+
+// completeMFAChallenge prompts the user for a TOTP or recovery code and finishes the
+// SubmitMFAChallenge round-trip. Shared between passwordLogin and oidcLogin.
+func completeMFAChallenge(cmd *cobra.Command, pr *promptReader, client iamv1connect.IamServiceClient, challenge string) (principal, secret string, err error) {
+	fmt.Fprintln(cmd.ErrOrStderr(), "Multi-factor authentication required.")
+	code := strings.TrimSpace(pr.readLine("6-digit code (or 'recovery' to use a recovery code): "))
+	req := &iamv1.SubmitMFAChallengeRequest{ChallengeToken: challenge}
+	if strings.EqualFold(code, "recovery") {
+		rc, rerr := pr.readPassword("Recovery code: ")
+		if rerr != nil {
+			return "", "", rerr
+		}
+		req.RecoveryCode = strings.TrimSpace(rc)
+	} else {
+		req.TotpCode = code
+	}
+	resp, err := client.SubmitMFAChallenge(cmd.Context(), connect.NewRequest(req))
+	if err != nil {
+		return "", "", err
+	}
+	if resp.Msg.GetUsedRecoveryCode() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Note: recovery code consumed — re-enroll a fresh authenticator device when convenient.")
+	}
+	return resp.Msg.GetPrincipal(), resp.Msg.GetSecret(), nil
 }
 
 // oidcLogin runs the OIDC loopback browser flow against the named provider and saves the API
@@ -206,6 +284,15 @@ func oidcLogin(cmd *cobra.Command, opts *rootOptions, providerSlug string) error
 	}))
 	if err != nil {
 		return err
+	}
+	// Same P0-4 two-leg gate as passwordLogin.
+	if challenge := strings.TrimSpace(complete.Msg.GetMfaChallengeToken()); challenge != "" {
+		pr := newPromptReader(cmd)
+		principal, secret, err := completeMFAChallenge(cmd, pr, client, challenge)
+		if err != nil {
+			return err
+		}
+		return saveLoginResult(cmd, opts, endpoint, principal, secret, "", "")
 	}
 	return saveLoginResult(cmd, opts, endpoint, complete.Msg.GetPrincipal(), complete.Msg.GetSecret(), "", "")
 }

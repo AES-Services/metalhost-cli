@@ -82,9 +82,13 @@ func newObjectStoreCommand(opts *rootOptions) *cobra.Command {
 	create.Flags().StringSliceVar(&bucketAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	create.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "client-stamped idempotency key (optional)")
 	cmd.AddCommand(create)
-	cmd.AddCommand(&cobra.Command{Use: "delete NAME", Short: "Delete bucket", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var bucketDelYes bool
+	bucketDelete := &cobra.Command{Use: "delete NAME", Short: "Delete bucket", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
+			return err
+		}
+		if err := confirmDestructive(cmd, bucketDelYes, "Delete bucket (and every object within)", args[0]); err != nil {
 			return err
 		}
 		client, err := ctx.objectStoreClient()
@@ -96,7 +100,9 @@ func newObjectStoreCommand(opts *rootOptions) *cobra.Command {
 			return err
 		}
 		return ctx.write(resp.Msg)
-	}})
+	}}
+	bucketDelete.Flags().BoolVar(&bucketDelYes, "yes", false, "skip the interactive confirmation prompt")
+	cmd.AddCommand(bucketDelete)
 	cmd.AddCommand(newObjectCommand(opts))
 	return cmd
 }
