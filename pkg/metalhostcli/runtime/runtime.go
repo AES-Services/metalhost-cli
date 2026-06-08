@@ -58,6 +58,7 @@ type rootOptions struct {
 	profile    string
 	endpoint   string
 	format     string
+	quiet      bool
 	use        string
 	userAgent  string
 }
@@ -80,6 +81,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&ro.profile, "profile", "", "profile name")
 	cmd.PersistentFlags().StringVar(&ro.endpoint, "endpoint", "", "Metalhost API endpoint")
 	cmd.PersistentFlags().StringVarP(&ro.format, "format", "o", "", "output format: table, json, yaml")
+	cmd.PersistentFlags().BoolVarP(&ro.quiet, "quiet", "q", false, "print only resource names (for scripting)")
 
 	cmd.AddCommand(newVersionCommand(ro))
 	cmd.AddCommand(newProfileCommand(ro))
@@ -94,6 +96,7 @@ func RuntimeFromCommand(cmd *cobra.Command, userAgent string) (*Runtime, error) 
 	profileName, _ := cmd.Root().PersistentFlags().GetString("profile")
 	endpoint, _ := cmd.Root().PersistentFlags().GetString("endpoint")
 	format, _ := cmd.Root().PersistentFlags().GetString("format")
+	quiet, _ := cmd.Root().PersistentFlags().GetBool("quiet")
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -108,6 +111,9 @@ func RuntimeFromCommand(cmd *cobra.Command, userAgent string) (*Runtime, error) 
 	}
 	if format != "" {
 		prof.Format = format
+	}
+	if quiet {
+		prof.Format = "name"
 	}
 	if strings.TrimSpace(userAgent) == "" {
 		userAgent = "metalhost-cli/" + version.Version + " (" + version.Commit + ")"

@@ -36,10 +36,10 @@ type authResult struct {
 // newInitCommand wires `metalhost init` — the first-run onboarding wizard. Handles four
 // auth paths so a brand-new user can go from a fresh laptop to a usable CLI in one command:
 //
-//   1. Existing API key (legacy / scripted setups)
-//   2. Email + password login (existing account, no key)
-//   3. Sign up for a new account (creates org + default project)
-//   4. OIDC browser login (delegated to `metalhost auth login --oidc <provider>`)
+//  1. Existing API key (legacy / scripted setups)
+//  2. Email + password login (existing account, no key)
+//  3. Sign up for a new account (creates org + default project)
+//  4. OIDC browser login (delegated to `metalhost auth login --oidc <provider>`)
 //
 // After auth, the wizard fetches the caller's projects + datacenters, lets the user pick
 // defaults, and saves everything to a profile that's set as current.
@@ -228,10 +228,7 @@ func runInit(cmd *cobra.Command, opts *rootOptions, nonInteractive, force bool) 
 
 // ─────────────────────── Auth branches ───────────────────────
 
-func authViaAPIKey(ctx context.Context, p *promptReader, stderr io.Writer, endpoint, userAgent string) (*authResult, error) {
-	// `io.Writer` is just here to satisfy the function signature shape — we only need a
-	// plain io.Writer. Cast at use.
-	_ = stderr
+func authViaAPIKey(ctx context.Context, p *promptReader, _ io.Writer, endpoint, userAgent string) (*authResult, error) {
 	apiKey, err := p.readPassword("API key (input hidden): ")
 	if err != nil {
 		return nil, fmt.Errorf("read api key: %w", err)
@@ -550,4 +547,3 @@ func defaultWhenEmpty(value, fallback string) string {
 	}
 	return value
 }
-

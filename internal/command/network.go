@@ -33,11 +33,7 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListNetworks(cmd.Context(), connect.NewRequest(&networkv1.ListNetworksRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListNetworks, &networkv1.ListNetworksRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&project, "project", "", "project")
@@ -102,11 +98,7 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListFirewallRules(cmd.Context(), connect.NewRequest(&networkv1.ListFirewallRulesRequest{TargetVm: vm, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListFirewallRules, &networkv1.ListFirewallRulesRequest{TargetVm: vm, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&vm, "vm", "", "VM resource name (required)")
@@ -179,9 +171,10 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return ctx.write(resp.Msg)
+		return writeDeleted(cmd, ctx, "firewall", args[0], resp.Msg)
 	}}
 	cmd.AddCommand(del)
+	attachNameCompleter(cmd, firewallNameCompleter(opts))
 	return cmd
 }
 

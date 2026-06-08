@@ -79,7 +79,6 @@ func newMFASubmitCommand(opts *rootOptions) *cobra.Command {
 	return cmd
 }
 
-
 // newSignupCommand prompts for email + password (or accepts via flags), calls SignUp, and
 // instructs the user to check their email + run `mh auth verify --token`. The endpoint must
 // be supplied (env METALHOST_ENDPOINT or --endpoint) since signup runs before any profile is

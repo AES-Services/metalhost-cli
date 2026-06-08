@@ -6,7 +6,7 @@ The `metalhost` binary is a human and automation-friendly wrapper around the pub
 
 ## Current Status
 
-The CLI is in early public release. It covers the customer-facing command surface for health, catalog, projects, operations, VMs, images, disks, networking, object storage, wallets, quotas, audit, IAM keys, and webhooks.
+The CLI is in early public release. It covers the customer-facing command surface for health, catalog, projects, operations, VMs, disks, file shares, networking, bare-metal, wallets, quotas, audit, support, IAM keys, SSH keys, and webhooks.
 
 The VM lifecycle has been validated end-to-end against a lab control plane: `metalhost vm create` starts an operation and reaches KubeVirt, and `metalhost vm delete` removes the matching VM resources. Customer production readiness still depends on the service endpoint's capacity checks, VM state reconciliation, persistent boot disk setup, and billing settlement.
 
@@ -50,17 +50,15 @@ The CLI is organized around Metalhost resources:
 
 ```sh
 metalhost catalog datacenter list
-metalhost catalog sku list
-metalhost project resource list --org organizations/acme
+metalhost catalog pricing quote --vcpus 4 --ram-gib 16 --cpu-class cascadelake --boot-disk-gib 50
+metalhost project list --org organizations/acme
 metalhost vm list --project projects/demo
-metalhost vm create --project projects/demo --region datacenters/dfw1 --sku skus/vm.cascadelake.c2m4 --image projects/demo/images/ubuntu
-metalhost image list --project projects/demo
-metalhost disk create --project projects/demo --region datacenters/dfw1 --size-gib 100 --class ssd
-metalhost network create --project projects/demo --region datacenters/dfw1 --id app --cidr 10.10.0.0/24
-metalhost bucket create app-artifacts --project projects/demo
-metalhost bucket object presign-upload app-artifacts --object releases/app.tar.gz
+metalhost vm create --project projects/demo --region datacenters/us-dal-1 --vcpus 4 --ram-gib 16 --cpu-class cascadelake --image ubuntu-24-04 --disk-size-gib 50
+metalhost compute ssh-key list --project projects/demo
+metalhost disk create --project projects/demo --region datacenters/us-dal-1 --size-gib 100 --class nvme
+metalhost network create --project projects/demo --region datacenters/us-dal-1 --id app --subnet-cidr-v4 10.10.0.0/24
 metalhost ops wait operations/01HY...
-metalhost wallet list --billing-account billingAccounts/acme
+metalhost wallet account list --org organizations/acme
 metalhost quota --project projects/demo
 metalhost audit search --project projects/demo --since 24h
 metalhost iam keys create --display-name ci --project projects/demo

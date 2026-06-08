@@ -7,26 +7,34 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/AES-Services/metalhost-cli/internal/config"
 	"github.com/AES-Services/metalhost-cli/internal/output"
 	"github.com/AES-Services/metalhost-cli/internal/version"
-	"github.com/AES-Services/metalhost-sdk/metalhost"
 	iamv1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/iam/v1"
 	"github.com/AES-Services/metalhost-sdk/gen/go/aes/iam/v1/iamv1connect"
+	"github.com/AES-Services/metalhost-sdk/metalhost"
 )
 
 type rootOptions struct {
-	configPath string
-	profile    string
-	endpoint   string
-	format     string
-	use        string
-	short      string
-	userAgent  string
+	configPath  string
+	profile     string
+	endpoint    string
+	format      string
+	quiet       bool
+	project     string
+	org         string
+	region      string
+	wait        bool
+	waitTimeout time.Duration
+	use         string
+	short       string
+	userAgent   string
 }
 
 type commandContext struct {
@@ -55,14 +63,18 @@ func NewRootCommandWithOptions(commandOpts RootCommandOptions) *cobra.Command {
 	opts.short = defaultString(commandOpts.Short, "Metalhost public CLI")
 	opts.userAgent = defaultString(commandOpts.UserAgent, "metalhost-cli")
 	cmd := &cobra.Command{
-		Use:          opts.use,
-		Short:        opts.short,
-		SilenceUsage: true,
+		Use:           opts.use,
+		Short:         opts.short,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "config file path")
 	cmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "profile name")
 	cmd.PersistentFlags().StringVar(&opts.endpoint, "endpoint", "", "Metalhost API endpoint")
 	cmd.PersistentFlags().StringVarP(&opts.format, "format", "o", "", "output format: table, json, yaml")
+	cmd.PersistentFlags().BoolVarP(&opts.quiet, "quiet", "q", false, "print only resource names (for scripting)")
+	addScopeFlags(cmd, opts)
+	addWaitFlags(cmd, opts)
 
 	cmd.AddCommand(newVersionCommand(opts))
 	cmd.AddCommand(newProfileCommand(opts))
@@ -92,13 +104,38 @@ func AttachCustomerCommands(cmd *cobra.Command, commandOpts RootCommandOptions) 
 		opts.profile, _ = c.Root().PersistentFlags().GetString("profile")
 		opts.endpoint, _ = c.Root().PersistentFlags().GetString("endpoint")
 		opts.format, _ = c.Root().PersistentFlags().GetString("format")
+		opts.quiet, _ = c.Root().PersistentFlags().GetBool("quiet")
+		opts.project, _ = c.Root().PersistentFlags().GetString("project")
+		opts.org, _ = c.Root().PersistentFlags().GetString("org")
+		opts.region, _ = c.Root().PersistentFlags().GetString("region")
+		opts.wait, _ = c.Root().PersistentFlags().GetBool("wait")
+		opts.waitTimeout, _ = c.Root().PersistentFlags().GetDuration("wait-timeout")
 		if prev != nil {
 			return prev(c, args)
 		}
 		return nil
 	}
 
+	addScopeFlags(cmd, opts)
+	addWaitFlags(cmd, opts)
 	addCustomerCommands(cmd, opts)
+}
+
+// addScopeFlags registers the persistent --project/--org/--region scope flags.
+// They set the active scope for every subcommand; a command-local flag of the
+// same name (e.g. `vm list --project`) still takes precedence when supplied.
+func addScopeFlags(cmd *cobra.Command, opts *rootOptions) {
+	cmd.PersistentFlags().StringVar(&opts.project, "project", "", "project scope (overrides profile default)")
+	cmd.PersistentFlags().StringVar(&opts.org, "org", "", "organization scope (overrides profile default)")
+	cmd.PersistentFlags().StringVar(&opts.region, "region", "", "region/datacenter scope (overrides profile default)")
+}
+
+// addWaitFlags registers the persistent --wait/--wait-timeout flags. When --wait
+// is set, any command whose response carries an operation is polled to a
+// terminal state and the final operation is rendered in its place.
+func addWaitFlags(cmd *cobra.Command, opts *rootOptions) {
+	cmd.PersistentFlags().BoolVar(&opts.wait, "wait", false, "wait for the returned operation to finish")
+	cmd.PersistentFlags().DurationVar(&opts.waitTimeout, "wait-timeout", 10*time.Minute, "max time to wait with --wait (0 = no limit)")
 }
 
 // addCustomerCommands is the single source of truth for which subcommands the
@@ -107,10 +144,16 @@ func AttachCustomerCommands(cmd *cobra.Command, commandOpts RootCommandOptions) 
 func addCustomerCommands(cmd *cobra.Command, opts *rootOptions) {
 	cmd.AddCommand(newInitCommand(opts))
 	cmd.AddCommand(newAuthCommand(opts))
+	cmd.AddCommand(newGetCommand(opts))
+	cmd.AddCommand(newDescribeCommand(opts))
+	cmd.AddCommand(newDeleteCommand(opts))
+	cmd.AddCommand(newApplyCommand(opts))
+	cmd.AddCommand(newDynamicDebugCommand(opts))
 	cmd.AddCommand(newIAMCommand(opts))
 	cmd.AddCommand(newCatalogCommand(opts))
 	cmd.AddCommand(newHealthCommand(opts))
 	cmd.AddCommand(newProjectCommand(opts))
+	cmd.AddCommand(newOrgCommand(opts))
 	cmd.AddCommand(newOpsCommand(opts))
 	cmd.AddCommand(newComputeCommand(opts))
 	cmd.AddCommand(newStorageCommand(opts))
@@ -118,7 +161,6 @@ func addCustomerCommands(cmd *cobra.Command, opts *rootOptions) {
 	cmd.AddCommand(newFileShareCommand(opts))
 	cmd.AddCommand(newNetworkCommand(opts))
 	cmd.AddCommand(newFirewallCommand(opts))
-	cmd.AddCommand(newObjectStoreCommand(opts))
 	cmd.AddCommand(newWalletCommand(opts))
 	cmd.AddCommand(newQuotaCommand(opts))
 	cmd.AddCommand(newAuditCommand(opts))
@@ -142,6 +184,22 @@ func loadCommandContext(opts *rootOptions) (*commandContext, error) {
 	}
 	if opts.format != "" {
 		prof.Format = opts.format
+	}
+	if opts.quiet {
+		// --quiet overrides any configured/explicit format: emit just names.
+		prof.Format = "name"
+	}
+	// Persistent --project/--org/--region override the profile defaults for this
+	// invocation. Command-local flags of the same name still win because they're
+	// read directly at their call sites (requireProject, etc.).
+	if opts.project != "" {
+		prof.Project = opts.project
+	}
+	if opts.org != "" {
+		prof.Organization = opts.org
+	}
+	if opts.region != "" {
+		prof.Region = opts.region
 	}
 	return &commandContext{root: opts, config: cfg, profile: prof}, nil
 }
@@ -173,6 +231,17 @@ func (c *commandContext) iamClient() (iamv1connect.IamServiceClient, error) {
 }
 
 func (c *commandContext) write(value any) error {
+	// When --wait is set and the value is an operation-bearing response, block
+	// until the operation finishes and render the final operation instead.
+	if c.root.wait {
+		if msg, ok := value.(proto.Message); ok {
+			final, err := c.maybeWait(msg)
+			if err != nil {
+				return err
+			}
+			value = final
+		}
+	}
 	return output.Write(os.Stdout, c.profile.Format, value)
 }
 
@@ -198,7 +267,15 @@ func newVersionCommand(opts *rootOptions) *cobra.Command {
 }
 
 func newAuthCommand(opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "auth", Short: "Authentication helpers"}
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Authentication helpers",
+		Example: examples(`
+  metalhost auth login --email you@example.com
+  metalhost auth login --oidc google
+  METALHOST_API_KEY=mk_... metalhost auth login --api-key
+  metalhost auth whoami`),
+	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "whoami",
 		Short: "Show the authenticated principal",
@@ -222,9 +299,9 @@ func newAuthCommand(opts *rootOptions) *cobra.Command {
 		},
 	})
 	var (
-		loginAPIKey  bool
-		loginEmail   string
-		loginOIDC    string
+		loginAPIKey bool
+		loginEmail  string
+		loginOIDC   string
 	)
 	login := &cobra.Command{
 		Use:   "login",

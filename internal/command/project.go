@@ -13,13 +13,20 @@ import (
 )
 
 func newProjectCommand(opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "project", Aliases: []string{"projects"}, Short: "Manage projects and organizations"}
+	cmd := &cobra.Command{
+		Use:     "project",
+		Aliases: []string{"projects"},
+		Short:   "Manage projects (organizations are under `metalhost org`)",
+		Example: examples(`
+  metalhost project list
+  metalhost project create my-proj --org acme --display-name "My Project"
+  metalhost project get my-proj`),
+	}
 	cmd.AddCommand(newProjectListCommand(opts))
 	cmd.AddCommand(newProjectGetCommand(opts))
 	cmd.AddCommand(newProjectCreateCommand(opts))
 	cmd.AddCommand(newProjectUpdateCommand(opts))
 	cmd.AddCommand(newProjectDeleteCommand(opts))
-	cmd.AddCommand(newOrgCommand(opts))
 	return cmd
 }
 
@@ -38,14 +45,14 @@ func newProjectUpdateCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req := &projectv1.UpdateProjectRequest{Name: args[0]}
+			req := &projectv1.UpdateProjectRequest{Name: qualifyName(args[0], "projects/")}
 			d := displayName
 			req.DisplayName = &d
 			resp, err := client.UpdateProject(cmd.Context(), connect.NewRequest(req))
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return ctx.write(unwrapSingleResource(resp.Msg))
 		},
 	}
 	cmd.Flags().StringVar(&displayName, "display-name", "", "new display name (required)")
@@ -68,7 +75,7 @@ func newProjectListCommand(opts *rootOptions) *cobra.Command {
 			// as "list every project on the platform" — admin-only. Customers want their
 			// own org's projects. Resolve via GetCallerIdentity and call once per
 			// accessible org, merging the results. Same shape the web frontend uses.
-			scopes := []string{strings.TrimSpace(parent)}
+			scopes := []string{qualifyName(parent, "organizations/")}
 			if scopes[0] == "" && strings.TrimSpace(ctx.profile.Organization) != "" {
 				scopes = []string{ctx.profile.Organization}
 			}
@@ -94,21 +101,31 @@ func newProjectListCommand(opts *rootOptions) *cobra.Command {
 			}
 			merged := &projectv1.ListProjectsResponse{}
 			for _, org := range scopes {
-				resp, err := client.ListProjects(cmd.Context(), connect.NewRequest(&projectv1.ListProjectsRequest{
-					Parent:    org,
-					PageSize:  effectivePageSize(pages),
-					PageToken: pages.pageToken,
-				}))
-				if err != nil {
-					return fmt.Errorf("list projects in %s: %w", org, err)
+				// With --all we drain every page for each org; otherwise a single page.
+				token := pages.pageToken
+				for {
+					resp, err := client.ListProjects(cmd.Context(), connect.NewRequest(&projectv1.ListProjectsRequest{
+						Parent:    org,
+						PageSize:  effectivePageSize(pages),
+						PageToken: token,
+					}))
+					if err != nil {
+						return fmt.Errorf("list projects in %s: %w", org, err)
+					}
+					merged.Projects = append(merged.Projects, resp.Msg.GetProjects()...)
+					token = resp.Msg.GetNextPageToken()
+					if !pages.all || token == "" {
+						// Per-org tokens aren't mergeable; expose only the first org's
+						// remaining token to keep the response shape stable.
+						if merged.NextPageToken == "" {
+							merged.NextPageToken = token
+						}
+						break
+					}
 				}
-				merged.Projects = append(merged.Projects, resp.Msg.GetProjects()...)
-				// Next-page tokens are per-org; we expose only the first org's token to
-				// keep the response shape stable. Multi-org pagination via the CLI is a
-				// future feature.
-				if merged.NextPageToken == "" {
-					merged.NextPageToken = resp.Msg.GetNextPageToken()
-				}
+			}
+			if pages.all {
+				merged.NextPageToken = ""
 			}
 			return ctx.write(merged)
 		},
@@ -132,11 +149,11 @@ func newProjectGetCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.GetProject(cmd.Context(), connect.NewRequest(&projectv1.GetProjectRequest{Name: args[0]}))
+			resp, err := client.GetProject(cmd.Context(), connect.NewRequest(&projectv1.GetProjectRequest{Name: qualifyName(args[0], "projects/")}))
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return ctx.write(unwrapSingleResource(resp.Msg))
 		},
 	}
 }
@@ -145,10 +162,15 @@ func newProjectCreateCommand(opts *rootOptions) *cobra.Command {
 	var displayName, parent string
 	cmd := &cobra.Command{
 		Use:   "create NAME",
-		Short: "Create project (NAME e.g. projects/my-proj)",
+		Short: "Create project (NAME may be a bare slug or projects/my-proj)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := loadCommandContext(opts)
+			if err != nil {
+				return err
+			}
+			// Parent org: explicit --org wins, else the active profile/env default.
+			parentOrg, err := requireOrg(ctx, parent)
 			if err != nil {
 				return err
 			}
@@ -156,15 +178,19 @@ func newProjectCreateCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.CreateProject(cmd.Context(), connect.NewRequest(&projectv1.CreateProjectRequest{Name: args[0], DisplayName: displayName, Parent: parent}))
+			resp, err := client.CreateProject(cmd.Context(), connect.NewRequest(&projectv1.CreateProjectRequest{
+				Name:        qualifyName(args[0], "projects/"),
+				DisplayName: displayName,
+				Parent:      qualifyName(parentOrg, "organizations/"),
+			}))
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return ctx.write(unwrapSingleResource(resp.Msg))
 		},
 	}
 	cmd.Flags().StringVar(&displayName, "display-name", "", "display name")
-	cmd.Flags().StringVar(&parent, "org", "", "parent organization, e.g. organizations/acme (required)")
+	cmd.Flags().StringVar(&parent, "org", "", "parent organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	return cmd
 }
 
@@ -179,18 +205,19 @@ func newProjectDeleteCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := confirmDestructive(cmd, yes, "Delete project (and all resources within)", args[0]); err != nil {
+			name := qualifyName(args[0], "projects/")
+			if err := confirmDestructive(cmd, yes, "Delete project (and all resources within)", name); err != nil {
 				return err
 			}
 			client, err := ctx.projectClient()
 			if err != nil {
 				return err
 			}
-			resp, err := client.DeleteProject(cmd.Context(), connect.NewRequest(&projectv1.DeleteProjectRequest{Name: args[0]}))
+			resp, err := client.DeleteProject(cmd.Context(), connect.NewRequest(&projectv1.DeleteProjectRequest{Name: name}))
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return writeDeleted(cmd, ctx, "project", name, resp.Msg)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "skip the interactive confirmation prompt")
@@ -199,6 +226,25 @@ func newProjectDeleteCommand(opts *rootOptions) *cobra.Command {
 
 func newOrgCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "org", Aliases: []string{"organization", "organizations", "orgs"}, Short: "Manage organizations"}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List organizations you belong to (with your role in each)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, err := loadCommandContext(opts)
+			if err != nil {
+				return err
+			}
+			client, err := ctx.iamClient()
+			if err != nil {
+				return err
+			}
+			resp, err := client.ListMyOrganizations(cmd.Context(), connect.NewRequest(&iamv1.ListMyOrganizationsRequest{}))
+			if err != nil {
+				return err
+			}
+			return ctx.write(resp.Msg)
+		},
+	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "get NAME",
 		Short: "Get organization",
@@ -212,18 +258,18 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.GetOrganization(cmd.Context(), connect.NewRequest(&projectv1.GetOrganizationRequest{Name: args[0]}))
+			resp, err := client.GetOrganization(cmd.Context(), connect.NewRequest(&projectv1.GetOrganizationRequest{Name: qualifyName(args[0], "organizations/")}))
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return ctx.write(unwrapSingleResource(resp.Msg))
 		},
 	})
 
 	var createDisplay string
 	create := &cobra.Command{
 		Use:   "create NAME",
-		Short: "Create organization (NAME e.g. organizations/acme)",
+		Short: "Create organization (NAME may be a bare slug or organizations/acme)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := loadCommandContext(opts)
@@ -234,11 +280,11 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.CreateOrganization(cmd.Context(), connect.NewRequest(&projectv1.CreateOrganizationRequest{Name: args[0], DisplayName: createDisplay}))
+			resp, err := client.CreateOrganization(cmd.Context(), connect.NewRequest(&projectv1.CreateOrganizationRequest{Name: qualifyName(args[0], "organizations/"), DisplayName: createDisplay}))
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return ctx.write(unwrapSingleResource(resp.Msg))
 		},
 	}
 	create.Flags().StringVar(&createDisplay, "display-name", "", "display name")
@@ -259,7 +305,7 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req := &projectv1.UpdateOrganizationRequest{Name: args[0]}
+			req := &projectv1.UpdateOrganizationRequest{Name: qualifyName(args[0], "organizations/")}
 			// Apply each optional field only when the operator explicitly passed the flag;
 			// cobra's Changed() lets us distinguish "set to empty/false" from "unset". This
 			// matters for require_mfa where false is a meaningful operator choice.
@@ -278,7 +324,7 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return ctx.write(unwrapSingleResource(resp.Msg))
 		},
 	}
 	updateOrg.Flags().StringVar(&updateOrgDisplay, "display-name", "", "new display name")
@@ -295,18 +341,19 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := confirmDestructive(cmd, orgDelYes, "Delete organization (and every project within)", args[0]); err != nil {
+			name := qualifyName(args[0], "organizations/")
+			if err := confirmDestructive(cmd, orgDelYes, "Delete organization (and every project within)", name); err != nil {
 				return err
 			}
 			client, err := ctx.projectClient()
 			if err != nil {
 				return err
 			}
-			resp, err := client.DeleteOrganization(cmd.Context(), connect.NewRequest(&projectv1.DeleteOrganizationRequest{Name: args[0]}))
+			resp, err := client.DeleteOrganization(cmd.Context(), connect.NewRequest(&projectv1.DeleteOrganizationRequest{Name: name}))
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return writeDeleted(cmd, ctx, "organization", name, resp.Msg)
 		},
 	}
 	orgDelete.Flags().BoolVar(&orgDelYes, "yes", false, "skip the interactive confirmation prompt")
@@ -326,11 +373,7 @@ func newOrgCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.ListOrgActivity(cmd.Context(), connect.NewRequest(&projectv1.ListOrgActivityRequest{OrganizationName: args[0], PageSize: effectivePageSize(activityPages), PageToken: activityPages.pageToken}))
-			if err != nil {
-				return err
-			}
-			return ctx.write(resp.Msg)
+			return doList(cmd, ctx, client.ListOrgActivity, &projectv1.ListOrgActivityRequest{OrganizationName: qualifyName(args[0], "organizations/"), PageSize: effectivePageSize(activityPages), PageToken: activityPages.pageToken}, activityPages.all)
 		},
 	}
 	addPageFlags(activity, &activityPages)

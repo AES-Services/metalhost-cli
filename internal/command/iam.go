@@ -1,6 +1,8 @@
 package command
 
 import (
+	"fmt"
+
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
@@ -35,11 +37,7 @@ func newAPIKeysCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListApiKeys(cmd.Context(), connect.NewRequest(&iamv1.ListApiKeysRequest{PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListApiKeys, &iamv1.ListApiKeysRequest{PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	cmd.AddCommand(list)
@@ -116,18 +114,18 @@ func newMembersCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		orgName, err := requireOrg(ctx, org)
+		if err != nil {
+			return err
+		}
 		client, err := ctx.iamClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListOrgMembers(cmd.Context(), connect.NewRequest(&iamv1.ListOrgMembersRequest{OrganizationName: org, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListOrgMembers, &iamv1.ListOrgMembersRequest{OrganizationName: orgName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
-	list.Flags().StringVar(&org, "org", "", "organization (required)")
+	list.Flags().StringVar(&org, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	cmd.AddCommand(list)
 
 	var inviteOrg, email, role, displayName string
@@ -136,17 +134,21 @@ func newMembersCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		orgName, err := requireOrg(ctx, inviteOrg)
+		if err != nil {
+			return err
+		}
 		client, err := ctx.iamClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.InviteOrgMember(cmd.Context(), connect.NewRequest(&iamv1.InviteOrgMemberRequest{OrganizationName: inviteOrg, Email: email, Role: role, DisplayName: displayName}))
+		resp, err := client.InviteOrgMember(cmd.Context(), connect.NewRequest(&iamv1.InviteOrgMemberRequest{OrganizationName: orgName, Email: email, Role: role, DisplayName: displayName}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
-	invite.Flags().StringVar(&inviteOrg, "org", "", "organization (required)")
+	invite.Flags().StringVar(&inviteOrg, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	invite.Flags().StringVar(&email, "email", "", "invitee email")
 	invite.Flags().StringVar(&role, "role", "viewer", "viewer | editor | admin")
 	invite.Flags().StringVar(&displayName, "display-name", "", "display name")
@@ -158,17 +160,21 @@ func newMembersCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		orgName, err := requireOrg(ctx, roleOrg)
+		if err != nil {
+			return err
+		}
 		client, err := ctx.iamClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.UpdateOrgMemberRole(cmd.Context(), connect.NewRequest(&iamv1.UpdateOrgMemberRoleRequest{OrganizationName: roleOrg, Principal: principal, Role: newRole}))
+		resp, err := client.UpdateOrgMemberRole(cmd.Context(), connect.NewRequest(&iamv1.UpdateOrgMemberRoleRequest{OrganizationName: orgName, Principal: principal, Role: newRole}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
-	updateRole.Flags().StringVar(&roleOrg, "org", "", "organization (required)")
+	updateRole.Flags().StringVar(&roleOrg, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	updateRole.Flags().StringVar(&principal, "principal", "", "user resource name (required)")
 	updateRole.Flags().StringVar(&newRole, "role", "", "viewer | editor | admin (required)")
 	cmd.AddCommand(updateRole)
@@ -179,17 +185,21 @@ func newMembersCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		orgName, err := requireOrg(ctx, removeOrg)
+		if err != nil {
+			return err
+		}
 		client, err := ctx.iamClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.RemoveOrgMember(cmd.Context(), connect.NewRequest(&iamv1.RemoveOrgMemberRequest{OrganizationName: removeOrg, Principal: removePrincipal}))
+		resp, err := client.RemoveOrgMember(cmd.Context(), connect.NewRequest(&iamv1.RemoveOrgMemberRequest{OrganizationName: orgName, Principal: removePrincipal}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
-	remove.Flags().StringVar(&removeOrg, "org", "", "organization (required)")
+	remove.Flags().StringVar(&removeOrg, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	remove.Flags().StringVar(&removePrincipal, "principal", "", "user resource name (required)")
 	cmd.AddCommand(remove)
 
@@ -299,13 +309,12 @@ func newMFACommand(opts *rootOptions) *cobra.Command {
 	enroll.Flags().StringVar(&enrollDisplay, "display-name", "", "label for this device (e.g. 'iPhone 15')")
 	cmd.AddCommand(enroll)
 
-	var verifyName, verifyCode string
+	var verifyCode string
 	verify := &cobra.Command{Use: "verify NAME", Short: "Confirm an MFA enrollment with a TOTP code", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
 		}
-		_ = verifyName
 		client, err := ctx.iamClient()
 		if err != nil {
 			return err
@@ -348,18 +357,18 @@ func newInvitesCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		orgName, err := requireOrg(ctx, listOrg)
+		if err != nil {
+			return err
+		}
 		client, err := ctx.iamClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListPendingInvites(cmd.Context(), connect.NewRequest(&iamv1.ListPendingInvitesRequest{OrganizationName: listOrg, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListPendingInvites, &iamv1.ListPendingInvitesRequest{OrganizationName: orgName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
-	list.Flags().StringVar(&listOrg, "org", "", "organization (required)")
+	list.Flags().StringVar(&listOrg, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	cmd.AddCommand(list)
 
 	var acceptToken string
@@ -387,19 +396,73 @@ func newInvitesCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		orgName, err := requireOrg(ctx, revokeOrg)
+		if err != nil {
+			return err
+		}
 		client, err := ctx.iamClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.RevokeInvite(cmd.Context(), connect.NewRequest(&iamv1.RevokeInviteRequest{OrganizationName: revokeOrg, InviteId: revokeInviteID}))
+		resp, err := client.RevokeInvite(cmd.Context(), connect.NewRequest(&iamv1.RevokeInviteRequest{OrganizationName: orgName, InviteId: revokeInviteID}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
-	revoke.Flags().StringVar(&revokeOrg, "org", "", "organization (required)")
+	revoke.Flags().StringVar(&revokeOrg, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	revoke.Flags().StringVar(&revokeInviteID, "invite-id", "", "invite id from `invites list` (required)")
 	cmd.AddCommand(revoke)
+
+	// Invites addressed to the signed-in user (the recipient side), distinct from the org-admin
+	// `list`/`revoke` above which act on a single org's pending invites.
+	cmd.AddCommand(&cobra.Command{Use: "mine", Short: "List invites addressed to you across all orgs", RunE: func(cmd *cobra.Command, _ []string) error {
+		ctx, err := loadCommandContext(opts)
+		if err != nil {
+			return err
+		}
+		client, err := ctx.iamClient()
+		if err != nil {
+			return err
+		}
+		resp, err := client.ListMyInvites(cmd.Context(), connect.NewRequest(&iamv1.ListMyInvitesRequest{}))
+		if err != nil {
+			return err
+		}
+		return ctx.write(resp.Msg)
+	}})
+
+	cmd.AddCommand(&cobra.Command{Use: "accept-mine INVITE_ID", Short: "Accept an invite addressed to you (by id, from `invites mine`)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		ctx, err := loadCommandContext(opts)
+		if err != nil {
+			return err
+		}
+		client, err := ctx.iamClient()
+		if err != nil {
+			return err
+		}
+		resp, err := client.AcceptMyInvite(cmd.Context(), connect.NewRequest(&iamv1.AcceptMyInviteRequest{InviteId: args[0]}))
+		if err != nil {
+			return err
+		}
+		return ctx.write(resp.Msg)
+	}})
+
+	cmd.AddCommand(&cobra.Command{Use: "decline INVITE_ID", Short: "Decline an invite addressed to you (by id, from `invites mine`)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		ctx, err := loadCommandContext(opts)
+		if err != nil {
+			return err
+		}
+		client, err := ctx.iamClient()
+		if err != nil {
+			return err
+		}
+		if _, err := client.DeclineMyInvite(cmd.Context(), connect.NewRequest(&iamv1.DeclineMyInviteRequest{InviteId: args[0]})); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Declined invite %s\n", args[0])
+		return nil
+	}})
 
 	return cmd
 }
@@ -427,13 +490,12 @@ func newUserCommand(opts *rootOptions) *cobra.Command {
 		return ctx.write(resp.Msg)
 	}})
 
-	var updateName, updateDisplay string
+	var updateDisplay string
 	update := &cobra.Command{Use: "update NAME", Short: "Update user display name", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
 		}
-		_ = updateName
 		req := &iamv1.UpdateUserRequest{Name: args[0]}
 		d := updateDisplay
 		req.DisplayName = &d
@@ -570,11 +632,7 @@ func newNotificationsCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListNotifications(cmd.Context(), connect.NewRequest(&iamv1.ListNotificationsRequest{OrganizationName: listOrg, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListNotifications, &iamv1.ListNotificationsRequest{OrganizationName: listOrg, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&listOrg, "org", "", "organization (defaults to primary org)")

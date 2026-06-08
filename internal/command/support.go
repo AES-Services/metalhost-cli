@@ -56,6 +56,10 @@ func newSupportTicketCreateCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			orgName, err := requireOrg(ctx, org)
+			if err != nil {
+				return err
+			}
 			client, err := ctx.supportClient()
 			if err != nil {
 				return err
@@ -73,7 +77,7 @@ func newSupportTicketCreateCommand(opts *rootOptions) *cobra.Command {
 				return err
 			}
 			resp, err := client.CreateTicket(cmd.Context(), connect.NewRequest(&supportv1.CreateTicketRequest{
-				OrganizationName: strings.TrimSpace(org),
+				OrganizationName: orgName,
 				Subject:          strings.TrimSpace(subject),
 				Body:             body,
 				Category:         cat,
@@ -86,13 +90,12 @@ func newSupportTicketCreateCommand(opts *rootOptions) *cobra.Command {
 			return ctx.write(resp.Msg)
 		},
 	}
-	cmd.Flags().StringVar(&org, "org", "", "organization name (required)")
+	cmd.Flags().StringVar(&org, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	cmd.Flags().StringVarP(&subject, "subject", "s", "", "ticket subject (required)")
 	cmd.Flags().StringVarP(&body, "body", "b", "", "initial message body (required)")
 	cmd.Flags().StringVar(&category, "category", "GENERAL", "category (GENERAL|TECHNICAL|BILLING|ABUSE|FEATURE)")
 	cmd.Flags().StringVar(&priority, "priority", "NORMAL", "priority (LOW|NORMAL|HIGH|URGENT)")
 	cmd.Flags().StringArrayVar(&refs, "resource", nil, "attach a resource as type=ID (repeatable, e.g. --resource vm=vm-123)")
-	_ = cmd.MarkFlagRequired("org")
 	_ = cmd.MarkFlagRequired("subject")
 	_ = cmd.MarkFlagRequired("body")
 	return cmd
@@ -112,6 +115,10 @@ func newSupportTicketListCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			orgName, err := requireOrg(ctx, org)
+			if err != nil {
+				return err
+			}
 			client, err := ctx.supportClient()
 			if err != nil {
 				return err
@@ -120,22 +127,17 @@ func newSupportTicketListCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.ListTickets(cmd.Context(), connect.NewRequest(&supportv1.ListTicketsRequest{
-				OrganizationName: strings.TrimSpace(org),
+			return doList(cmd, ctx, client.ListTickets, &supportv1.ListTicketsRequest{
+				OrganizationName: orgName,
 				StatusFilter:     st,
 				PageSize:         effectivePageSize(pages),
 				PageToken:        pages.pageToken,
-			}))
-			if err != nil {
-				return err
-			}
-			return ctx.write(resp.Msg)
+			}, pages.all)
 		},
 	}
-	cmd.Flags().StringVar(&org, "org", "", "organization name (required)")
+	cmd.Flags().StringVar(&org, "org", "", "organization (defaults to --org / profile / METALHOST_ORGANIZATION)")
 	cmd.Flags().StringVar(&status, "status", "", "filter by status (OPEN|PENDING_CUSTOMER|PENDING_STAFF|RESOLVED|CLOSED); default = all non-CLOSED")
 	addPageFlags(cmd, &pages)
-	_ = cmd.MarkFlagRequired("org")
 	return cmd
 }
 
@@ -182,7 +184,7 @@ func newSupportTicketReplyCommand(opts *rootOptions) *cobra.Command {
 			}
 			resp, err := client.ReplyTicket(cmd.Context(), connect.NewRequest(&supportv1.ReplyTicketRequest{
 				Name: args[0],
-				Body:     body,
+				Body: body,
 			}))
 			if err != nil {
 				return err
@@ -212,7 +214,7 @@ func newSupportTicketCloseCommand(opts *rootOptions) *cobra.Command {
 			}
 			resp, err := client.CloseTicket(cmd.Context(), connect.NewRequest(&supportv1.CloseTicketRequest{
 				Name: args[0],
-				Body:     body,
+				Body: body,
 			}))
 			if err != nil {
 				return err

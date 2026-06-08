@@ -7,7 +7,6 @@ import (
 	computev1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/compute/v1/computev1connect"
 	healthv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/health/v1/healthv1connect"
 	networkv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/network/v1/networkv1connect"
-	objectstorev1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/objectstore/v1/objectstorev1connect"
 	opsv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/ops/v1/opsv1connect"
 	projectv1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/project/v1/projectv1connect"
 	quotav1connect "github.com/AES-Services/metalhost-sdk/gen/go/aes/quota/v1/quotav1connect"
@@ -79,14 +78,6 @@ func (c *commandContext) networkClient() (networkv1connect.NetworkServiceClient,
 		return nil, err
 	}
 	return networkv1connect.NewNetworkServiceClient(cfg.Client(), cfg.BaseURL()), nil
-}
-
-func (c *commandContext) objectStoreClient() (objectstorev1connect.ObjectStoreServiceClient, error) {
-	cfg, err := c.sdkConfig()
-	if err != nil {
-		return nil, err
-	}
-	return objectstorev1connect.NewObjectStoreServiceClient(cfg.Client(), cfg.BaseURL()), nil
 }
 
 func (c *commandContext) walletClient() (walletv1connect.WalletServiceClient, error) {

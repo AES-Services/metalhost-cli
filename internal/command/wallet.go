@@ -37,11 +37,7 @@ func newWalletAccountCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListBillingAccounts(cmd.Context(), connect.NewRequest(&walletv1.ListBillingAccountsRequest{PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListBillingAccounts, &walletv1.ListBillingAccountsRequest{PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	cmd.AddCommand(list)
@@ -122,7 +118,7 @@ func newWalletTopUpCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "top-up", Aliases: []string{"topup"}, Short: "Top-up flows (Stripe + x402) and history"}
 
 	var pages pageFlags
-	var topUpWallet, topUpState string
+	var topUpState string
 	list := &cobra.Command{Use: "list WALLET", Short: "List top-ups for a wallet", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -132,13 +128,8 @@ func newWalletTopUpCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListTopUps(cmd.Context(), connect.NewRequest(&walletv1.ListTopUpsRequest{WalletName: args[0], State: topUpState, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListTopUps, &walletv1.ListTopUpsRequest{WalletName: args[0], State: topUpState, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
-	_ = topUpWallet
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&topUpState, "state", "", "filter by top-up state")
 	cmd.AddCommand(list)
@@ -189,9 +180,9 @@ func newWalletTopUpCommand(opts *rootOptions) *cobra.Command {
 	stripe.Flags().StringVar(&stripeIdem, "idempotency-key", "", "client-stamped idempotency key (optional)")
 	cmd.AddCommand(stripe)
 
-	var x402Amount int64
-	var x402Wallet, x402Currency, x402Chain, x402Idem string
-	x402 := &cobra.Command{Use: "x402", Short: "Create an x402 USDC top-up challenge", RunE: func(cmd *cobra.Command, _ []string) error {
+	var cbAmount int64
+	var cbWallet, cbCurrency, cbIdem string
+	coinbase := &cobra.Command{Use: "coinbase", Aliases: []string{"crypto", "usdc"}, Short: "Create a Coinbase crypto top-up checkout (settled in USDC)", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -200,24 +191,22 @@ func newWalletTopUpCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateX402TopUpChallenge(cmd.Context(), connect.NewRequest(&walletv1.CreateX402TopUpChallengeRequest{
-			WalletName:     x402Wallet,
-			AmountMinor:    x402Amount,
-			Currency:       x402Currency,
-			Chain:          x402Chain,
-			IdempotencyKey: x402Idem,
+		resp, err := client.CreateCoinbaseTopUpCheckout(cmd.Context(), connect.NewRequest(&walletv1.CreateCoinbaseTopUpCheckoutRequest{
+			WalletName:     cbWallet,
+			AmountMinor:    cbAmount,
+			Currency:       cbCurrency,
+			IdempotencyKey: cbIdem,
 		}))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
-	x402.Flags().StringVar(&x402Wallet, "wallet", "", "wallet resource name (required)")
-	x402.Flags().Int64Var(&x402Amount, "amount-minor", 0, "amount in minor units (cents) — required")
-	x402.Flags().StringVar(&x402Currency, "currency", "USDC", "USD or USDC")
-	x402.Flags().StringVar(&x402Chain, "chain", "base", "settlement chain: base | ethereum | polygon")
-	x402.Flags().StringVar(&x402Idem, "idempotency-key", "", "client-stamped idempotency key (optional)")
-	cmd.AddCommand(x402)
+	coinbase.Flags().StringVar(&cbWallet, "wallet", "", "wallet resource name (required)")
+	coinbase.Flags().Int64Var(&cbAmount, "amount-minor", 0, "amount in minor units (cents); min 500 — required")
+	coinbase.Flags().StringVar(&cbCurrency, "currency", "USD", "currency (USD; settled 1:1 in USDC)")
+	coinbase.Flags().StringVar(&cbIdem, "idempotency-key", "", "client-stamped idempotency key (optional)")
+	cmd.AddCommand(coinbase)
 
 	return cmd
 }
@@ -236,11 +225,7 @@ func newWalletPaymentMethodCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListPaymentMethods(cmd.Context(), connect.NewRequest(&walletv1.ListPaymentMethodsRequest{BillingAccountName: billing, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListPaymentMethods, &walletv1.ListPaymentMethodsRequest{BillingAccountName: billing, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&billing, "billing-account", "", "billing account resource name (required)")
@@ -350,7 +335,7 @@ func newWalletAutoRechargeCommand(opts *rootOptions) *cobra.Command {
 
 	var arEnabled bool
 	var arThreshold, arAmount int64
-	var arWallet, arPM string
+	var arPM string
 	configure := &cobra.Command{Use: "configure WALLET", Short: "Enable / update / disable auto-recharge", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -360,7 +345,6 @@ func newWalletAutoRechargeCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		_ = arWallet
 		resp, err := client.ConfigureAutoRecharge(cmd.Context(), connect.NewRequest(&walletv1.ConfigureAutoRechargeRequest{
 			WalletName:        args[0],
 			Enabled:           arEnabled,
@@ -451,11 +435,7 @@ func newWalletInvoiceCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListInvoices(cmd.Context(), connect.NewRequest(&walletv1.ListInvoicesRequest{BillingAccountName: billing, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListInvoices, &walletv1.ListInvoicesRequest{BillingAccountName: billing, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&billing, "billing-account", "", "billing account resource name (required)")
@@ -507,7 +487,8 @@ func newWalletUsageCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if queryProject == "" {
+		queryOrg = orgOrDefault(ctx, queryOrg)
+		if queryProject == "" && queryOrg == "" {
 			projectName, err := requireProject(ctx, "")
 			if err != nil {
 				return err
@@ -550,7 +531,8 @@ func newWalletUsageCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if expProject == "" {
+		expOrg = orgOrDefault(ctx, expOrg)
+		if expProject == "" && expOrg == "" {
 			projectName, err := requireProject(ctx, "")
 			if err != nil {
 				return err
@@ -580,7 +562,7 @@ func newWalletUsageCommand(opts *rootOptions) *cobra.Command {
 	export.Flags().StringVar(&expProject, "project", "", "project scope (defaults to active project)")
 	export.Flags().StringVar(&expOrg, "org", "", "organization scope")
 	export.Flags().StringVar(&expMeter, "meter-prefix", "", "filter by meter prefix")
-	export.Flags().StringVar(&expFormat, "format", "csv", "csv | ndjson")
+	export.Flags().StringVar(&expFormat, "file-format", "csv", "exported file format: csv | ndjson")
 	export.Flags().Int32Var(&expRows, "max-rows", 0, "max rows (0 = server default)")
 	export.Flags().DurationVar(&expSince, "since", 30*24*time.Hour, "lookback duration")
 	cmd.AddCommand(export)

@@ -29,13 +29,9 @@ func newSSHKeyCommands(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.ListSSHKeys(cmd.Context(), connect.NewRequest(&computev1.ListSSHKeysRequest{
+			return doList(cmd, ctx, client.ListSSHKeys, &computev1.ListSSHKeysRequest{
 				ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken,
-			}))
-			if err != nil {
-				return err
-			}
-			return ctx.write(resp.Msg)
+			}, pages.all)
 		},
 	}
 	addPageFlags(list, &pages)
@@ -99,10 +95,11 @@ func newSSHKeyCommands(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return ctx.write(resp.Msg)
+			return writeDeleted(cmd, ctx, "ssh-key", args[0], resp.Msg)
 		},
 	}
 
 	cmd.AddCommand(list, create, del)
+	attachNameCompleter(cmd, sshKeyNameCompleter(opts))
 	return cmd
 }

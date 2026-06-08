@@ -3,6 +3,7 @@ package command
 import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	storagev1 "github.com/AES-Services/metalhost-sdk/gen/go/aes/storage/v1"
 )
@@ -14,7 +15,16 @@ func newStorageCommand(opts *rootOptions) *cobra.Command {
 }
 
 func newDiskCommand(opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "disk", Aliases: []string{"disks"}, Short: "Manage disks"}
+	cmd := &cobra.Command{
+		Use:     "disk",
+		Aliases: []string{"disks"},
+		Short:   "Manage disks",
+		Example: examples(`
+  metalhost disk list
+  metalhost disk create --size-gib 100 --region datacenters/us-dal-1 --display-name data
+  metalhost disk attach projects/p/disks/data --vm projects/p/virtual-machines/web-1
+  metalhost disk resize projects/p/disks/data --size-gib 200`),
+	}
 	var pages pageFlags
 	var project string
 	list := &cobra.Command{Use: "list", Short: "List disks", RunE: func(cmd *cobra.Command, _ []string) error {
@@ -30,11 +40,7 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListDisks(cmd.Context(), connect.NewRequest(&storagev1.ListDisksRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListDisks, &storagev1.ListDisksRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&project, "project", "", "project")
@@ -76,15 +82,17 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 			return err
 		}
 		resp, err := client.CreateDisk(cmd.Context(), connect.NewRequest(&storagev1.CreateDiskRequest{
-			ProjectName:    projectName,
-			DatacenterName: region,
-			SizeGib:        size,
-			StorageClass:   class,
-			DisplayName:    displayName,
-			NetworkName:    networkName,
-			FromImageUrl:   fromImageURL,
-			Labels:         stringMapFromPairs(labelPairs),
-			Annotations:    stringMapFromPairs(annotationPairs),
+			Parent: projectName,
+			Disk: &storagev1.Disk{
+				DatacenterName: region,
+				SizeGib:        size,
+				StorageClass:   class,
+				DisplayName:    displayName,
+				NetworkName:    networkName,
+				Labels:         stringMapFromPairs(labelPairs),
+				Annotations:    stringMapFromPairs(annotationPairs),
+			},
+			FromImageUrl: fromImageURL,
 		}))
 		if err != nil {
 			return err
@@ -119,7 +127,7 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return ctx.write(resp.Msg)
+		return writeDeleted(cmd, ctx, "disk", args[0], resp.Msg)
 	}}
 	diskDelete.Flags().BoolVar(&diskDelYes, "yes", false, "skip the interactive confirmation prompt")
 	cmd.AddCommand(diskDelete)
@@ -189,11 +197,22 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		req := &storagev1.UpdateDiskRequest{Name: args[0], ClearLabels: clearLabels, ClearAnnotations: clearAnnotations}
-		if updateDisplay != "" {
-			d := updateDisplay
-			req.DisplayName = &d
+		// Resource-oriented update: the field mask names which mutable fields to write, and the
+		// value comes off the embedded disk. clear-labels/clear-annotations map to naming the
+		// field in the mask with an empty map (replace-not-merge semantics).
+		disk := &storagev1.Disk{Name: args[0]}
+		var paths []string
+		if cmd.Flags().Changed("display-name") {
+			disk.DisplayName = updateDisplay
+			paths = append(paths, "display_name")
 		}
+		if clearLabels {
+			paths = append(paths, "labels")
+		}
+		if clearAnnotations {
+			paths = append(paths, "annotations")
+		}
+		req := &storagev1.UpdateDiskRequest{Disk: disk, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}}
 		resp, err := client.UpdateDisk(cmd.Context(), connect.NewRequest(req))
 		if err != nil {
 			return err
@@ -205,6 +224,7 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 	update.Flags().BoolVar(&clearAnnotations, "clear-annotations", false, "clear all annotations")
 	cmd.AddCommand(update)
 
+	attachNameCompleter(cmd, diskNameCompleter(opts))
 	return cmd
 }
 
@@ -225,11 +245,7 @@ func newFileShareCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListFileShares(cmd.Context(), connect.NewRequest(&storagev1.ListFileSharesRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListFileShares, &storagev1.ListFileSharesRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&project, "project", "", "project")
@@ -294,10 +310,11 @@ func newFileShareCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return ctx.write(resp.Msg)
+		return writeDeleted(cmd, ctx, "file-share", args[0], resp.Msg)
 	}}
 	fsDelete.Flags().BoolVar(&fsDelYes, "yes", false, "skip the interactive confirmation prompt")
 	cmd.AddCommand(fsDelete)
 
+	attachNameCompleter(cmd, fileShareNameCompleter(opts))
 	return cmd
 }

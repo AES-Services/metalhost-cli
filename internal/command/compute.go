@@ -12,8 +12,20 @@ import (
 )
 
 func newComputeCommand(opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "vm", Aliases: []string{"vms", "compute"}, Short: "Manage virtual machines"}
+	cmd := &cobra.Command{
+		Use:     "vm",
+		Aliases: []string{"vms", "compute"},
+		Short:   "Manage virtual machines",
+		Example: examples(`
+  metalhost vm list
+  metalhost vm get projects/p/virtual-machines/web-1
+  metalhost vm create --vcpus 4 --ram-gib 16 --cpu-class cascadelake \
+      --image ubuntu-24-04 --disk-size-gib 40 --ssh-key-name projects/p/ssh-keys/laptop
+  metalhost vm apply -f vm.yaml
+  metalhost vm delete projects/p/virtual-machines/web-1 --yes`),
+	}
 	cmd.AddCommand(newVMCommands(opts)...)
+	attachNameCompleter(cmd, vmNameCompleter(opts))
 	cmd.AddCommand(newSSHKeyCommands(opts))
 	return cmd
 }
@@ -36,11 +48,7 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.ListVirtualMachines(cmd.Context(), connect.NewRequest(&computev1.ListVirtualMachinesRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-			if err != nil {
-				return err
-			}
-			return ctx.write(resp.Msg)
+			return doList(cmd, ctx, client.ListVirtualMachines, &computev1.ListVirtualMachinesRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 		},
 	}
 	addPageFlags(list, &pages)
@@ -64,14 +72,16 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 
 	var (
 		createProject, region                    string
-		bootURL, bootDiskName                    string
+		image, bootURL, bootDiskName             string
+		gpuModel                                 string
 		sshKey, userData, hostname               string
+		linuxUser, password                      string
 		network, billingModeRaw, cpuClass        string
 		sshKeyNames, labelPairs, annotationPairs []string
-		diskSize, vcpus, ramGib                  int32
-		autorenew, assignPubIPv4                 bool
+		diskSize, vcpus, ramGib, gpuCount        int32
+		autorenew, assignPubIPv4, sudo           bool
 	)
-	create := &cobra.Command{Use: "create", Short: "Create a VM", RunE: func(cmd *cobra.Command, _ []string) error {
+	create := &cobra.Command{Use: "create", Short: "Create a VM", Long: "Create a VM from flags. For a full declarative spec (multiple users, etc.) use `vm apply -f`.", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -87,59 +97,73 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-
-		// Boot disk source: exactly one of --boot-url / --boot-disk-name.
-		// --boot-disk-name attaches an existing Disk and skips the inline BootDiskSpec entirely.
-		bootSources := 0
-		if bootURL != "" {
-			bootSources++
-		}
-		if bootDiskName != "" {
-			bootSources++
-		}
-		if bootSources != 1 {
-			return fmt.Errorf("specify exactly one of --boot-url or --boot-disk-name")
-		}
-
 		if vcpus <= 0 || ramGib <= 0 || cpuClass == "" {
 			return fmt.Errorf("--vcpus, --ram-gib, and --cpu-class are required")
 		}
-		req := &computev1.CreateVirtualMachineRequest{
-			ProjectName:      projectName,
-			DatacenterName:   region,
-			SshPubkey:        sshKey,
-			UserData:         userData,
-			SshKeyNames:      sshKeyNames,
-			BillingMode:      billingMode,
-			Autorenew:        autorenew,
-			Hostname:         hostname,
-			AssignPublicIpv4: assignPubIPv4,
-			NetworkName:      network,
-			Vcpus:            vcpus,
-			RamGib:           ramGib,
-			CpuClass:         cpuClass,
-			Labels:           stringMapFromPairs(labelPairs),
-			Annotations:      stringMapFromPairs(annotationPairs),
+
+		// Boot source: at most one of --image (catalog id) / --boot-url (raw URL) / --boot-disk-name
+		// (pre-existing Disk). image/url need a --disk-size-gib.
+		boot := &computev1.VMBootSpec{}
+		bootSources := 0
+		if image != "" {
+			boot.Image, boot.DiskGib, bootSources = image, diskSize, bootSources+1
+		}
+		if bootURL != "" {
+			boot.ImageUrl, boot.DiskGib, bootSources = bootURL, diskSize, bootSources+1
+		}
+		if bootDiskName != "" {
+			boot.DiskName, bootSources = bootDiskName, bootSources+1
+		}
+		if bootSources > 1 {
+			return fmt.Errorf("specify at most one of --image, --boot-url, or --boot-disk-name")
+		}
+		if (image != "" || bootURL != "") && diskSize < 1 {
+			return fmt.Errorf("--disk-size-gib must be at least 1 when using --image/--boot-url")
 		}
 
-		// Inline boot disk vs pre-existing disk
-		if bootDiskName != "" {
-			req.BootDiskName = bootDiskName
-		} else {
-			if diskSize < 1 {
-				return fmt.Errorf("--disk-size-gib must be at least 1 when using --boot-url")
+		computeSpec := &computev1.VMComputeSpec{Vcpus: vcpus, RamGib: ramGib, CpuClass: cpuClass}
+		if gpuModel != "" || gpuCount > 0 {
+			computeSpec.Gpu = &computev1.GPUSpec{Model: gpuModel, Count: gpuCount}
+		}
+
+		// One login user from the flags; `vm apply -f` covers the multi-user case. A user is added
+		// only when there's something to log in with (name/keys/password).
+		var users []*computev1.UserSpec
+		if linuxUser != "" || password != "" || sshKey != "" || len(sshKeyNames) > 0 {
+			name := linuxUser
+			if name == "" {
+				name = "ubuntu"
 			}
-			req.BootDisk = &computev1.BootDiskSpec{
-				SizeGib:      diskSize,
-				FromImageUrl: bootURL,
-			}
+			users = append(users, &computev1.UserSpec{
+				Name: name, Password: password, Sudo: sudo, SshKeys: sshKeyNames, SshPubkey: sshKey,
+			})
+		}
+
+		manifest := &computev1.VirtualMachineManifest{
+			ApiVersion: "compute.metalhost.io/v1",
+			Kind:       "VirtualMachine",
+			Metadata: &computev1.VirtualMachineMetadata{
+				Name:        hostname,
+				Project:     projectName,
+				Labels:      stringMapFromPairs(labelPairs),
+				Annotations: stringMapFromPairs(annotationPairs),
+			},
+			Spec: &computev1.VirtualMachineSpec{
+				Region:    region,
+				Compute:   computeSpec,
+				Boot:      boot,
+				Network:   &computev1.VMNetworkSpec{Network: network, PublicIpv4: assignPubIPv4},
+				Users:     users,
+				CloudInit: userData,
+				Billing:   &computev1.VMBillingSpec{Mode: billingMode, Autorenew: autorenew},
+			},
 		}
 
 		client, err := ctx.computeClient()
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateVirtualMachine(cmd.Context(), connect.NewRequest(req))
+		resp, err := client.CreateVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.CreateVirtualMachineRequest{Manifest: manifest}))
 		if err != nil {
 			return err
 		}
@@ -150,22 +174,28 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 	create.Flags().Int32Var(&vcpus, "vcpus", 0, "vCPU count (required)")
 	create.Flags().Int32Var(&ramGib, "ram-gib", 0, "RAM GiB (required)")
 	create.Flags().StringVar(&cpuClass, "cpu-class", "", "CPU class, e.g. cascadelake (required)")
+	create.Flags().StringVar(&gpuModel, "gpu-model", "", "GPU model for whole-GPU passthrough, e.g. rtx4090")
+	create.Flags().Int32Var(&gpuCount, "gpu-count", 0, "number of GPUs to attach (with --gpu-model)")
+	create.Flags().StringVar(&image, "image", "", "catalog image id, e.g. ubuntu-24-04 (resolved server-side; alternative to --boot-url)")
 	create.Flags().StringVar(&bootURL, "boot-url", "", "streamable raw boot image URL (CDI http source)")
-	create.Flags().StringVar(&bootDiskName, "boot-disk-name", "", "use a pre-existing Disk as boot, e.g. projects/p/disks/my-disk (mutually exclusive with --boot-url)")
-	create.Flags().Int32Var(&diskSize, "disk-size-gib", 0, "boot disk size GiB (required with --boot-url)")
+	create.Flags().StringVar(&bootDiskName, "boot-disk-name", "", "use a pre-existing Disk as boot, e.g. projects/p/disks/my-disk")
+	create.Flags().Int32Var(&diskSize, "disk-size-gib", 0, "boot disk size GiB (required with --image/--boot-url)")
 	create.Flags().StringVar(&hostname, "hostname", "", "VM hostname (DNS-1123 label, ≤63 chars; defaults to a UUID slug)")
 	create.Flags().BoolVar(&assignPubIPv4, "assign-public-ipv4", false, "allocate a public IPv4 from the DC pool")
 	create.Flags().StringVar(&network, "network", "", "tenant network resource name, e.g. projects/p/networks/default (defaults to project's default)")
+	create.Flags().StringVar(&linuxUser, "user", "", "login username to create (default ubuntu when keys/password given)")
+	create.Flags().StringVar(&password, "password", "", "login password for --user (sent over TLS, hashed server-side)")
+	create.Flags().BoolVar(&sudo, "sudo", true, "grant the user passwordless sudo")
 	create.Flags().StringVar(&sshKey, "ssh-key", "", "OpenSSH public key line (inline; alternative to --ssh-key-name)")
 	create.Flags().StringSliceVar(&sshKeyNames, "ssh-key-name", nil, "registered SSH key resource name(s), e.g. projects/p/ssh-keys/laptop (repeatable)")
-	create.Flags().StringVar(&userData, "user-data", "", "cloud-init user-data (#cloud-config YAML)")
+	create.Flags().StringVar(&userData, "user-data", "", "cloud-init user-data (#cloud-config YAML); when set, owns user creation")
 	create.Flags().StringVar(&billingModeRaw, "billing-mode", "", "BILLING_MODE_HOURLY (default), BILLING_MODE_MONTHLY_1, monthly-3, monthly-6, monthly-12")
 	create.Flags().BoolVar(&autorenew, "autorenew", false, "auto-renew prepaid monthly term (ignored for hourly billing)")
 	create.Flags().StringSliceVar(&labelPairs, "label", nil, "labels as key=value (repeatable)")
 	create.Flags().StringSliceVar(&annotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 
 	return []*cobra.Command{
-		list, get, create,
+		list, get, create, vmApplyCommand(opts),
 		vmDeleteCommand(opts),
 		vmStartCommand(opts),
 		vmStopCommand(opts),
@@ -415,11 +445,7 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListVmSnapshots(cmd.Context(), connect.NewRequest(&computev1.ListVmSnapshotsRequest{ProjectName: projectName, SourceVm: listSrc, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-		if err != nil {
-			return err
-		}
-		return ctx.write(resp.Msg)
+		return doList(cmd, ctx, client.ListVmSnapshots, &computev1.ListVmSnapshotsRequest{ProjectName: projectName, SourceVm: listSrc, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 	}}
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&listProject, "project", "", "project (defaults to active project)")
@@ -459,7 +485,7 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return ctx.write(resp.Msg)
+		return writeDeleted(cmd, ctx, "vm-snapshot", args[0], resp.Msg)
 	}}
 	snapDelete.Flags().BoolVar(&snapDelYes, "yes", false, "skip the interactive confirmation prompt")
 	cmd.AddCommand(snapDelete)

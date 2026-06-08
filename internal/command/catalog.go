@@ -12,6 +12,34 @@ func newCatalogCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "catalog", Short: "Browse datacenters and pricing"}
 	cmd.AddCommand(newDatacenterCommand(opts))
 	cmd.AddCommand(newPricingCommand(opts))
+	cmd.AddCommand(newCapacityCommand(opts))
+	return cmd
+}
+
+func newCapacityCommand(opts *rootOptions) *cobra.Command {
+	var dc string
+	cmd := &cobra.Command{
+		Use:   "capacity",
+		Short: "Show VM capacity (vCPU/RAM/GPU availability) per datacenter",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, err := loadCommandContext(opts)
+			if err != nil {
+				return err
+			}
+			client, err := ctx.catalogClient()
+			if err != nil {
+				return err
+			}
+			resp, err := client.GetVMCapacity(cmd.Context(), connect.NewRequest(&catalogv1.GetVMCapacityRequest{
+				DatacenterName: dc,
+			}))
+			if err != nil {
+				return err
+			}
+			return ctx.write(resp.Msg)
+		},
+	}
+	cmd.Flags().StringVar(&dc, "datacenter", "", "filter to one datacenter, e.g. datacenters/us-dal-1 (default: all READY/DEGRADED)")
 	return cmd
 }
 
@@ -30,11 +58,7 @@ func newDatacenterCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.ListDatacenters(cmd.Context(), connect.NewRequest(&catalogv1.ListDatacentersRequest{PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-			if err != nil {
-				return err
-			}
-			return ctx.write(resp.Msg)
+			return doList(cmd, ctx, client.ListDatacenters, &catalogv1.ListDatacentersRequest{PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 		},
 	}
 	addPageFlags(list, &pages)

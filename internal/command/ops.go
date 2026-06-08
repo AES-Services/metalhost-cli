@@ -29,11 +29,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := client.ListOperations(cmd.Context(), connect.NewRequest(&opsv1.ListOperationsRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}))
-			if err != nil {
-				return err
-			}
-			return ctx.write(resp.Msg)
+			return doList(cmd, ctx, client.ListOperations, &opsv1.ListOperationsRequest{ProjectName: projectName, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
 		},
 	}
 	addPageFlags(list, &pages)

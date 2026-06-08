@@ -12,12 +12,14 @@ type pageFlags struct {
 	pageSize  int32
 	pageToken string
 	limit     int32
+	all       bool
 }
 
 func addPageFlags(cmd *cobra.Command, f *pageFlags) {
 	cmd.Flags().Int32Var(&f.pageSize, "page-size", 50, "page size")
 	cmd.Flags().StringVar(&f.pageToken, "page-token", "", "page token")
 	cmd.Flags().Int32Var(&f.limit, "limit", 0, "maximum results to request")
+	cmd.Flags().BoolVar(&f.all, "all", false, "fetch all pages (follow next_page_token)")
 }
 
 func effectivePageSize(f pageFlags) int32 {
@@ -40,6 +42,43 @@ func requireProject(ctx *commandContext, explicit string) (string, error) {
 	return "", errors.New("project is required; pass --project or set METALHOST_PROJECT/profile default")
 }
 
+// requireOrg resolves the organization scope the same way requireProject does
+// for projects: an explicit flag wins, otherwise the active profile/env default
+// (--org / METALHOST_ORGANIZATION). This keeps org-scoped commands consistent
+// with the global --org flag instead of forcing a per-command flag.
+func requireOrg(ctx *commandContext, explicit string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		return explicit, nil
+	}
+	if strings.TrimSpace(ctx.profile.Organization) != "" {
+		return ctx.profile.Organization, nil
+	}
+	return "", errors.New("organization is required; pass --org or set METALHOST_ORGANIZATION/profile default")
+}
+
+// orgOrDefault resolves the org scope but tolerates an empty result, for RPCs
+// that have their own server-side default (e.g. notifications fall back to the
+// caller's primary org). Explicit flag wins, then the profile/env org.
+func orgOrDefault(ctx *commandContext, explicit string) string {
+	if strings.TrimSpace(explicit) != "" {
+		return explicit
+	}
+	return strings.TrimSpace(ctx.profile.Organization)
+}
+
+// qualifyName lets users pass either a bare slug ("acme") or a fully-qualified resource name
+// ("organizations/acme") wherever a command takes a resource name. A bare slug is prefixed with
+// the resource collection (e.g. "organizations/", "projects/"); an already-qualified name (any
+// value containing "/") is returned untouched, as is empty input so callers keep their own
+// required-arg handling.
+func qualifyName(arg, prefix string) string {
+	arg = strings.TrimSpace(arg)
+	if arg == "" || strings.Contains(arg, "/") {
+		return arg
+	}
+	return prefix + arg
+}
+
 // confirmDestructive is the shared --yes / interactive prompt guard for irreversible
 // operations (delete vm, delete disk, delete project, delete org). `yes=true` skips the
 // prompt; otherwise we read y/yes from stdin. The `target` is shown verbatim in the prompt
@@ -54,6 +93,12 @@ func confirmDestructive(cmd *cobra.Command, yes bool, action, target string) err
 		return errors.New("aborted")
 	}
 	return nil
+}
+
+// examples trims only the surrounding blank lines of a raw example block,
+// preserving the per-line indentation so cobra renders every line consistently.
+func examples(s string) string {
+	return strings.Trim(s, "\n")
 }
 
 func stringMapFromPairs(pairs []string) map[string]string {
