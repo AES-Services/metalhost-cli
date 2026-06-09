@@ -10,6 +10,22 @@ The CLI is in early public release. It covers the customer-facing command surfac
 
 The VM lifecycle has been validated end-to-end against a lab control plane: `metalhost vm create` starts an operation and reaches KubeVirt, and `metalhost vm delete` removes the matching VM resources. Customer production readiness still depends on the service endpoint's capacity checks, VM state reconciliation, persistent boot disk setup, and billing settlement.
 
+## Install (macOS / Linux)
+
+```sh
+curl -fsSL https://metalhost.net/install-cli.sh | bash
+metalhost version
+```
+
+Pin a version or install directory:
+
+```sh
+VERSION=v1.0.0-rc6 curl -fsSL https://metalhost.net/install-cli.sh | bash
+INSTALL_DIR=~/.local/bin curl -fsSL https://metalhost.net/install-cli.sh | bash
+```
+
+The script is also in this repo at `scripts/install.sh`.
+
 ## Install From Source
 
 ```sh
