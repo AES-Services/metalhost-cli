@@ -400,9 +400,9 @@ func vmRenewNowCommand(opts *rootOptions) *cobra.Command {
 }
 
 func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "snapshot", Aliases: []string{"snapshots", "backup", "backups"}, Short: "Manage VM snapshots / backups"}
+	cmd := &cobra.Command{Use: "snapshot", Aliases: []string{"snapshots", "backup", "backups"}, Short: "Manage whole-VM backups"}
 
-	var snapVM, snapDisplay string
+	var snapVM, snapDisplay, snapRequestKey string
 	var snapLabelPairs, snapAnnotationPairs []string
 	create := &cobra.Command{Use: "create", Short: "Create a snapshot of a VM", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
@@ -413,12 +413,12 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.SnapshotVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.SnapshotVirtualMachineRequest{
+		resp, err := client.SnapshotVirtualMachine(cmd.Context(), backupRequest(&computev1.SnapshotVirtualMachineRequest{
 			VmName:      snapVM,
 			DisplayName: snapDisplay,
 			Labels:      stringMapFromPairs(snapLabelPairs),
 			Annotations: stringMapFromPairs(snapAnnotationPairs),
-		}))
+		}, snapRequestKey))
 		if err != nil {
 			return err
 		}
@@ -426,6 +426,7 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 	}}
 	create.Flags().StringVar(&snapVM, "vm", "", "source VM resource name (required)")
 	create.Flags().StringVar(&snapDisplay, "display-name", "", "display name for the snapshot (required)")
+	create.Flags().StringVar(&snapRequestKey, "idempotency-key", "", "reuse this key for retries of the same capture")
 	create.Flags().StringSliceVar(&snapLabelPairs, "label", nil, "labels as key=value (repeatable)")
 	create.Flags().StringSliceVar(&snapAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	cmd.AddCommand(create)
@@ -494,12 +495,12 @@ func vmSnapshotCommand(opts *rootOptions) *cobra.Command {
 }
 
 func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
-	var snapshot, displayName, hostname, billingModeRaw, userData string
+	var snapshot, displayName, hostname, billingModeRaw, userData, restoreRequestKey string
 	var sshKeyNames []string
 	var assignPubIPv4, autorenew bool
 	var vcpus, ramGib int32
 	var cpuClass string
-	cmd := &cobra.Command{Use: "from-backup", Short: "Create a new VM from a VmSnapshot", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "from-backup", Short: "Restore every captured disk into a new, separately billed VM", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -512,7 +513,7 @@ func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateVirtualMachineFromBackup(cmd.Context(), connect.NewRequest(&computev1.CreateVirtualMachineFromBackupRequest{
+		resp, err := client.CreateVirtualMachineFromBackup(cmd.Context(), backupRequest(&computev1.CreateVirtualMachineFromBackupRequest{
 			VmSnapshotName:    snapshot,
 			TargetDisplayName: displayName,
 			Hostname:          hostname,
@@ -524,13 +525,14 @@ func vmFromBackupCommand(opts *rootOptions) *cobra.Command {
 			AssignPublicIpv4:  assignPubIPv4,
 			SshKeyNames:       sshKeyNames,
 			UserData:          userData,
-		}))
+		}, restoreRequestKey))
 		if err != nil {
 			return err
 		}
 		return ctx.write(resp.Msg)
 	}}
 	cmd.Flags().StringVar(&snapshot, "snapshot", "", "source VmSnapshot resource name (required)")
+	cmd.Flags().StringVar(&restoreRequestKey, "idempotency-key", "", "reuse this key for retries of the same restore")
 	cmd.Flags().StringVar(&displayName, "display-name", "", "display name for the new VM (required)")
 	cmd.Flags().StringVar(&hostname, "hostname", "", "hostname (defaults to sanitised display name)")
 	cmd.Flags().Int32Var(&vcpus, "vcpus", 0, "configurator override: vCPUs")

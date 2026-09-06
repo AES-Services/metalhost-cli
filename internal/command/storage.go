@@ -1,6 +1,8 @@
 package command
 
 import (
+	"fmt"
+
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -10,7 +12,7 @@ import (
 
 func newStorageCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "storage", Short: "Manage storage resources"}
-	cmd.AddCommand(newDiskCommand(opts), newFileShareCommand(opts))
+	cmd.AddCommand(newDiskCommand(opts), newFileShareCommand(opts), newBackupScheduleCommand(opts))
 	return cmd
 }
 
@@ -62,10 +64,13 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 		return ctx.write(resp.Msg)
 	}})
 
-	var createProject, region, class, displayName, networkName, fromImageURL string
+	var createProject, region, class, displayName, networkName, fromImageURL, fromSnapshot, diskID, requestKey string
 	var size int32
 	var labelPairs, annotationPairs []string
 	create := &cobra.Command{Use: "create", Short: "Create a disk", RunE: func(cmd *cobra.Command, _ []string) error {
+		if fromSnapshot != "" && diskID == "" {
+			return fmt.Errorf("--id is required with --from-backup; reuse it when retrying the restore")
+		}
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -81,8 +86,9 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateDisk(cmd.Context(), connect.NewRequest(&storagev1.CreateDiskRequest{
+		resp, err := client.CreateDisk(cmd.Context(), backupRequest(&storagev1.CreateDiskRequest{
 			Parent: projectName,
+			DiskId: diskID,
 			Disk: &storagev1.Disk{
 				DatacenterName: region,
 				SizeGib:        size,
@@ -93,7 +99,8 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 				Annotations:    stringMapFromPairs(annotationPairs),
 			},
 			FromImageUrl: fromImageURL,
-		}))
+			FromSnapshot: fromSnapshot,
+		}, requestKey))
 		if err != nil {
 			return err
 		}
@@ -106,6 +113,10 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 	create.Flags().StringVar(&displayName, "display-name", "", "display name")
 	create.Flags().StringVar(&networkName, "network", "", "tenant network resource name (defaults to project's default Network)")
 	create.Flags().StringVar(&fromImageURL, "from-image-url", "", "hydrate the disk from a streamable raw image URL (CDI imports during PROVISIONING)")
+	create.Flags().StringVar(&fromSnapshot, "from-backup", "", "restore a single-disk backup into a new, separately billed disk")
+	create.Flags().StringVar(&diskID, "id", "", "client-chosen disk ID; reuse it when retrying a restore")
+	create.Flags().StringVar(&requestKey, "idempotency-key", "", "reuse this key for retries of the same request")
+	create.MarkFlagsMutuallyExclusive("from-image-url", "from-backup")
 	create.Flags().StringSliceVar(&labelPairs, "label", nil, "labels as key=value (repeatable)")
 	create.Flags().StringSliceVar(&annotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	cmd.AddCommand(create)
@@ -224,6 +235,7 @@ func newDiskCommand(opts *rootOptions) *cobra.Command {
 	update.Flags().BoolVar(&clearAnnotations, "clear-annotations", false, "clear all annotations")
 	cmd.AddCommand(update)
 
+	cmd.AddCommand(newDiskBackupCommand(opts))
 	attachNameCompleter(cmd, diskNameCompleter(opts))
 	return cmd
 }
