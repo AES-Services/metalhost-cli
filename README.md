@@ -62,6 +62,10 @@ metalhost auth whoami --format json
 
 ## Command Surface
 
+The unreleased September bundle adds scoped automation, monitoring/alerts, and
+keyless GitHub Actions. See [Observability commands](docs/OBSERVABILITY.md) for
+request files, safe retry identities, private key output, and workflow usage.
+
 The CLI is organized around Metalhost resources:
 
 ```sh

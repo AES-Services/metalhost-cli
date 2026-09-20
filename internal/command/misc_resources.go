@@ -72,6 +72,8 @@ func newAuditCommand(opts *rootOptions) *cobra.Command {
 
 func newWebhooksCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "webhook", Aliases: []string{"webhooks"}, Short: "Manage webhook subscriptions"}
+	cmd.AddCommand(observabilityRPC(opts, "create-from-file", "aes.webhooks.v1.WebhooksService", "CreateSubscription", true, true))
+	cmd.AddCommand(observabilityRPC(opts, "rotate", "aes.webhooks.v1.WebhooksService", "RotateSubscriptionSecret", true, true))
 	var pages pageFlags
 	var project string
 	list := &cobra.Command{Use: "list", Short: "List webhook subscriptions", RunE: func(cmd *cobra.Command, _ []string) error {

@@ -150,6 +150,8 @@ func addCustomerCommands(cmd *cobra.Command, opts *rootOptions) {
 	cmd.AddCommand(newApplyCommand(opts))
 	cmd.AddCommand(newDynamicDebugCommand(opts))
 	cmd.AddCommand(newIAMCommand(opts))
+	cmd.AddCommand(newAutomationCommand(opts))
+	cmd.AddCommand(newMonitoringCommand(opts))
 	cmd.AddCommand(newCatalogCommand(opts))
 	cmd.AddCommand(newHealthCommand(opts))
 	cmd.AddCommand(newProjectCommand(opts))
