@@ -1,5 +1,10 @@
 # Metalhost CLI
 
+For September scoped credentials and GitHub workflow access, see
+[Automation integration boundaries](docs/AUTOMATION.md) and the September
+[command examples](docs/OBSERVABILITY.md). These commands require the matching
+September CLI/backend release. Managed runners are not part of this integration.
+
 Public CLI for AES Metalhost.
 
 The `metalhost` binary is a human and automation-friendly wrapper around the public Metalhost API and SDK.
