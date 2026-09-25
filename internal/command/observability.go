@@ -47,7 +47,7 @@ func newMonitoringCommand(opts *rootOptions) *cobra.Command {
 		cmd.AddCommand(observabilityRPC(opts, method[0], "aes.monitoring.v1.MonitoringService", method[1], false, false))
 	}
 	guest := &cobra.Command{Use: "guest", Short: "Optional guest monitoring enrollment (never automatically stops or starts a VM)", Long: "Inspect status first. Existing VMs without the identity device require an explicitly approved stop/start: stop using the compute command, wait for completion, enable with confirm_device_attachment=true, then explicitly start the VM. Prepared new VMs need no restart. Enrollment returns public installation configuration, not an API key. Revocation blocks ingestion but does not uninstall guest software."}
-	for _, method := range [][2]string{{"status", "GetEnhancedMonitoring"}, {"enable", "EnableEnhancedMonitoring"}, {"revoke", "RevokeEnhancedMonitoring"}} {
+	for _, method := range [][2]string{{"status", "GetEnhancedMonitoring"}, {"enable", "EnableEnhancedMonitoring"}, {"set-paused", "SetEnhancedMonitoringPaused"}, {"revoke", "RevokeEnhancedMonitoring"}} {
 		guest.AddCommand(observabilityRPC(opts, method[0], "aes.monitoring.v1.MonitoringService", method[1], method[0] != "status", false))
 	}
 	cmd.AddCommand(guest)

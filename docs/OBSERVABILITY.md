@@ -29,6 +29,12 @@ Unknown fields are rejected; input is capped at 1 MiB and output at 4 MiB.
 List requests return the server cursor; pass `page_token` in the next request.
 `--project` fills only an omitted top-level `project_name`, never a nested scope.
 
+Project administrators can inspect all project credentials by passing a request
+file containing `{"all_project_credentials":true}` to `automation keys list`.
+Keep `--project projects/example`; do not combine this option with a
+`service_account` filter. This does not grant permission to rotate other members'
+keys. The default list remains the caller's credentials.
+
 Mutations require an explicit file. Preserve the exact `request_id`, resource ID,
 and `expected_version` after an ambiguous failure. Do not issue a new creation
 because its response was lost. Requests are not automatically retried.
@@ -61,6 +67,43 @@ and `update` (acknowledge/snooze); destinations expose `save`, `delete`, `verify
 `request-verification`, `test`, and `test-status`. Creation is not native evaluator
 acceptance. Inspect applied version and evaluation health. SENT means provider
 acceptance, not an inbox/read receipt. Missing telemetry does not imply recovery.
+
+For a new Slack, Discord or Teams destination, `destinations save` accepts the
+write-only `webhook_url` alongside `destination` and `request_id` in its JSON
+request file. Keep provider webhook URLs in private files (mode `0600`) or pass
+them through stdin from a secret manager; never use command-line arguments,
+source control, or CI artifacts. The CLI does not echo request bodies. Omit the
+URL on edits; changing the endpoint requires a new destination. Channel
+availability and human-only verification/test authorization are enforced by the
+backend, not bypassed by these commands.
+
+## Pause and resume guest monitoring
+
+First run `metalhost monitoring guest status --file vm.json`, where `vm.json`
+contains `{"name":"virtual-machines/VM_ID"}`. Copy the returned installation ID
+into a reviewed request file:
+
+```json
+{
+  "name": "virtual-machines/VM_ID",
+  "installation_id": "INSTALLATION_ID",
+  "paused": true,
+  "request_id": "11111111-1111-4111-8111-111111111111"
+}
+```
+
+Use your actual resource IDs and a fresh UUID for the new operation, then run:
+
+```sh
+metalhost monitoring guest set-paused --file pause.json
+```
+
+To resume, set `paused` to `false` and use a new request UUID. For an uncertain
+result, retry the original file unchanged instead. Both operations require
+`monitoring.write`. They preserve the installation/history and do not power-cycle
+the VM. `guest revoke` is permanent and does not uninstall software; it is not a
+substitute for pause. Enrollment remains `guest enable` and requires explicit
+approval of any necessary VM stop/start, never automatic power operations.
 
 `monitoring config` outputs configuration with placeholders/file paths, never
 your actual API key. Protect the referenced Prometheus credential file. Hosted
