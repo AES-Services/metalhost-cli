@@ -32,6 +32,7 @@ const loopbackTimeout = 5 * time.Minute
 // authFlowsCommands attaches the signup / verify / login(email,oidc) / link subcommands to an
 // existing `auth` command. Called from newAuthCommand to keep root.go small.
 func authFlowsCommands(auth *cobra.Command, opts *rootOptions) {
+	auth.AddCommand(newGitHubWorkloadCommand(opts))
 	auth.AddCommand(newSignupCommand(opts))
 	auth.AddCommand(newVerifyEmailCommand(opts))
 	auth.AddCommand(newLinkOidcCommand(opts))

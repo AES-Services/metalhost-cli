@@ -2,6 +2,8 @@
 
 `metalhost` is the public command-line client for AES Metalhost. The current stable release is `v1.0.0`. It uses the public `github.com/AES-Services/metalhost-sdk` generated Connect clients.
 
+This branch also includes scoped automation, monitoring, and keyless GitHub Actions. See [Automation](docs/AUTOMATION.md) and [Observability](docs/OBSERVABILITY.md). Those commands need a matching backend and SDK `v1.1.2`. Managed runners are not part of this integration.
+
 ## Install
 
 macOS and Linux installer:
@@ -151,7 +153,7 @@ See [Command reference](docs/COMMAND_REFERENCE.md) and [Scripting guide](docs/SC
 
 ## Command groups
 
-The root command includes `init`, `auth`, `profile`, `get`, `describe`, `delete`, `apply`, `iam`, `catalog`, `health`, `project`, `org`, `ops`, `vm`, `storage`, `disk`, `file-share`, `network`, `firewall`, `wallet`, `quota`, `audit`, `baremetal`, `webhook`, `support`, `completion`, and `version`.
+The root command includes `init`, `auth`, `profile`, `get`, `describe`, `delete`, `apply`, `iam`, `automation`, `monitoring`, `catalog`, `health`, `project`, `org`, `ops`, `vm`, `storage`, `disk`, `file-share`, `network`, `firewall`, `wallet`, `quota`, `audit`, `baremetal`, `webhook`, `support`, `completion`, and `version`.
 
 Use `metalhost COMMAND --help` for command-local flags and actions.
 
