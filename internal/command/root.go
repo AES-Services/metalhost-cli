@@ -169,6 +169,11 @@ func addCustomerCommands(cmd *cobra.Command, opts *rootOptions) {
 	cmd.AddCommand(newBareMetalCommand(opts))
 	cmd.AddCommand(newWebhooksCommand(opts))
 	cmd.AddCommand(newSupportCommand(opts))
+	cmd.AddCommand(newVpcCommand(opts))
+	cmd.AddCommand(newPublicIPCommand(opts))
+	cmd.AddCommand(newLoadBalancerCommand(opts))
+	cmd.AddCommand(newSecurityGroupCommand(opts))
+	addOctoberSubcommands(cmd, opts)
 	cmd.AddCommand(newCompletionCommand(cmd))
 }
 

@@ -42,11 +42,41 @@ func HandleError(w io.Writer, err error) int {
 	}
 
 	code := connectErr.Code()
-	fmt.Fprintf(w, "Error: %s (%s)\n", connectErr.Message(), code.String())
-	if hint := hintForCode(code); hint != "" {
+	info, hasInfo := errorInfoOf(err)
+	label := code.String()
+	if hasInfo && info.Reason != "" {
+		label = info.Reason
+	}
+	fmt.Fprintf(w, "Error: %s (%s)\n", connectErr.Message(), label)
+	if hint := hintForReason(info.Reason); hint != "" {
+		fmt.Fprintf(w, "  %s\n", hint)
+	} else if hint := hintForCode(code); hint != "" {
 		fmt.Fprintf(w, "  %s\n", hint)
 	}
+	if hasInfo && info.RequestID != "" {
+		fmt.Fprintf(w, "  Request ID: %s (include it if you contact support)\n", info.RequestID)
+	}
 	return exitCodeFor(code)
+}
+
+// hintForReason gives the next step for reasons more specific than their code.
+func hintForReason(reason string) string {
+	switch reason {
+	case "BILLING_INSUFFICIENT_BALANCE":
+		return "Add funds to the wallet (see `metalhost wallet`), then retry."
+	case "QUOTA_EXCEEDED":
+		return "A quota limit was reached — check `metalhost quota list` or request an increase with `metalhost quota request`."
+	case "TRUST_TIER_LIMIT":
+		return "New accounts are limited until the first top-up settles — add funds to raise the limit."
+	case "CAPACITY_UNAVAILABLE":
+		return "Not enough capacity right now — try a smaller size or another datacenter, or open a ticket with `metalhost support ticket create`."
+	case "RATE_LIMITED":
+		return "Too many requests — wait a moment and retry."
+	case "INTERNAL", "DATACENTER_UNREACHABLE":
+		return "This is a server-side failure — retry, or open a ticket with `metalhost support ticket create`."
+	default:
+		return ""
+	}
 }
 
 func hintForCode(code connect.Code) string {

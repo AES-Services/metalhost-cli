@@ -169,6 +169,78 @@ func resourceRegistry() []*resourceHandler {
 			},
 		},
 		{
+			kind: "vpc", aliases: []string{"vpcs"}, title: "VPC",
+			parent: projectParent,
+			list: func(cmd *cobra.Command, c *commandContext, parent string, pages pageFlags) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invokeList(cmd, cl.ListVpcs, &networkv1.ListVpcsRequest{ProjectName: parent, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
+			},
+			get: func(cmd *cobra.Command, c *commandContext, name string) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invoke(cmd, cl.GetVpc, &networkv1.GetVpcRequest{Name: name})
+			},
+		},
+		{
+			kind: "public-ip", aliases: []string{"public-ips", "ip", "ips"}, title: "Public IP",
+			parent: projectParent,
+			list: func(cmd *cobra.Command, c *commandContext, parent string, pages pageFlags) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invokeList(cmd, cl.ListPublicIps, &networkv1.ListPublicIpsRequest{ProjectName: parent, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
+			},
+			get: func(cmd *cobra.Command, c *commandContext, name string) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invoke(cmd, cl.GetPublicIp, &networkv1.GetPublicIpRequest{Name: name})
+			},
+		},
+		{
+			kind: "load-balancer", aliases: []string{"load-balancers", "lb", "lbs"}, title: "Load balancer",
+			parent: projectParent,
+			list: func(cmd *cobra.Command, c *commandContext, parent string, pages pageFlags) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invokeList(cmd, cl.ListLoadBalancers, &networkv1.ListLoadBalancersRequest{ProjectName: parent, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
+			},
+			get: func(cmd *cobra.Command, c *commandContext, name string) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invoke(cmd, cl.GetLoadBalancer, &networkv1.GetLoadBalancerRequest{Name: name})
+			},
+		},
+		{
+			kind: "security-group", aliases: []string{"security-groups", "sg", "sgs"}, title: "Security group",
+			parent: projectParent,
+			list: func(cmd *cobra.Command, c *commandContext, parent string, pages pageFlags) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invokeList(cmd, cl.ListSecurityGroups, &networkv1.ListSecurityGroupsRequest{ProjectName: parent, PageSize: effectivePageSize(pages), PageToken: pages.pageToken}, pages.all)
+			},
+			get: func(cmd *cobra.Command, c *commandContext, name string) (proto.Message, error) {
+				cl, err := c.networkClient()
+				if err != nil {
+					return nil, err
+				}
+				return invoke(cmd, cl.GetSecurityGroup, &networkv1.GetSecurityGroupRequest{Name: name})
+			},
+		},
+		{
 			kind: "baremetal", aliases: []string{"bare-metal", "bm"}, title: "Bare-metal instance",
 			parent: projectParent,
 			list: func(cmd *cobra.Command, c *commandContext, parent string, pages pageFlags) (proto.Message, error) {
