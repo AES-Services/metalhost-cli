@@ -2,7 +2,7 @@
 
 `metalhost` is the public command-line client for AES Metalhost. The current stable release is `v1.0.0`. It uses the public `github.com/AES-Services/metalhost-sdk` generated Connect clients.
 
-This branch also includes scoped automation, monitoring, and keyless GitHub Actions. See [Automation](docs/AUTOMATION.md) and [Observability](docs/OBSERVABILITY.md). Those commands need a matching backend and SDK `v1.1.2`. Managed runners are not part of this integration.
+This branch also includes scoped automation, monitoring, and keyless GitHub Actions. See [Automation](docs/AUTOMATION.md) and [Observability](docs/OBSERVABILITY.md). Those commands need a matching backend and SDK `v1.3.0` or later. Managed runners are not part of this integration.
 
 ## Install
 
@@ -111,7 +111,7 @@ metalhost project list --org organizations/acme
 metalhost vm list --project projects/demo
 metalhost vm create --project projects/demo --region datacenters/us-dal-1 --vcpus 4 --ram-gib 16 --cpu-class cascadelake --image ubuntu-24-04 --disk-size-gib 50
 metalhost disk create --project projects/demo --region datacenters/us-dal-1 --size-gib 100 --class nvme
-metalhost network create --project projects/demo --region datacenters/us-dal-1 --id app --subnet-cidr-v4 10.10.0.0/24
+metalhost network create --project projects/demo --region datacenters/us-dal-1 --subnet projects/demo/vpcs/main/subnets/app
 metalhost wallet account list --org organizations/acme
 ```
 

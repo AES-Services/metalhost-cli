@@ -64,6 +64,18 @@ The CLI maps request failures to:
 130  interrupted
 ```
 
+API errors print the reason code and request ID on stderr:
+
+```text
+Error: You've reached a quota limit. Request an increase from the Quotas page. (QUOTA_EXCEEDED)
+  A quota limit was reached — check `metalhost quota list` or request an increase with `metalhost quota request`.
+  Request ID: 7f6c2a1e-… (include it if you contact support)
+```
+
+Branch on the exit code (above) or the reason (`aes.errors.v1.ErrorReason` values without the `ERROR_REASON_` prefix), never on the message text. A failed operation reports the same values in its `failure_reason`.
+
+Mutations that take a request ID (`network create`, `firewall create|delete`, and every `--file` request) generate one when you omit it and print it on stderr. Retry an uncertain mutation with that same ID; a new ID performs the action again.
+
 Global `--wait` timeout is an error. Destructive commands may prompt; pass the leaf command's `--yes` flag when available.
 
 ## Declarative pipelines

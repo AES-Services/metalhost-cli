@@ -124,7 +124,11 @@ func connectErrorFromJSON(status int, body []byte) error {
 	if msg == "" {
 		msg = http.StatusText(status)
 	}
-	return connect.NewError(connectCodeFromString(payload.Code), fmt.Errorf("%s", msg))
+	ce := connect.NewError(connectCodeFromString(payload.Code), fmt.Errorf("%s", msg))
+	if info := errorInfoFromJSON(body); info.Reason != "" || info.RequestID != "" {
+		return &reasonedError{err: ce, info: info}
+	}
+	return ce
 }
 
 func connectCodeFromString(s string) connect.Code {

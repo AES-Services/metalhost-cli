@@ -20,9 +20,10 @@ Canonical unified kinds are:
 
 ```text
 vm ssh-key disk file-share network baremetal webhook project
+vpc public-ip load-balancer security-group
 ```
 
-Not every verb is available for every kind. For example, `network` is list-only in the unified registry and `baremetal` has no unified delete. Service-specific trees expose additional actions.
+Not every verb is available for every kind. For example, `network` is list-only in the unified registry, `baremetal` has no unified delete, and the four networking kinds on the second line support `get`/`describe` only: their deletes need a request ID and expected version, so use their own command groups. Service-specific trees expose additional actions.
 
 ## Service command groups
 
@@ -34,11 +35,16 @@ Not every verb is available for every kind. For example, `network` is list-only 
 - `storage`: nested disk and file-share commands.
 - `disk`: top-level disk shortcut and disk actions.
 - `file-share`: top-level file-share shortcut.
-- `network`: tenant network lifecycle and network actions.
-- `firewall`: firewall-rule management.
+- `vpc`: VPCs (`list`, `get`, `create`, `update`, `delete`, `detach-datacenter`) and `vpc subnet` (`list`, `get`, `create`, `update`, `delete`, `attach`).
+- `network`: networks VMs join. `network create --subnet` publishes a VPC subnet in a datacenter.
+- `public-ip`: `list`, `get`, `reserve`, `attach`, `detach`, `release`.
+- `load-balancer`: `list`, `get`, `create`, `update`, `delete`.
+- `security-group`: `list`, `get`, `create`, `update`, `delete`, `add-vm`, `remove-vm`.
+- `vm network`: `interfaces`, `internet-policy get|set`, `alias add|remove`, `set-default-public-ip`.
+- `firewall`: firewall rules, including deny rules, priorities and port forwarding (`--forward-public-ip`, `--port PUBLIC:VM/tcp`).
 - `baremetal`: offers, inventory, quote, order, lifecycle, power, reinstall, rescue, boot device, console, and ISO/virtual-media operations.
 - `wallet`: accounts, wallets, top-ups, payments, invoices, and usage.
-- `quota`: current project quotas.
+- `quota`: current project quotas, `request` an increase, and list your `requests`.
 - `audit`: event search.
 - `webhook`: subscriptions and delivery attempts.
 - `support`: customer support operations.

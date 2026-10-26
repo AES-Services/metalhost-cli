@@ -70,7 +70,7 @@ func newMonitoringCommand(opts *rootOptions) *cobra.Command {
 }
 
 func observabilityRPC(opts *rootOptions, use, service, method string, write, secret bool) *cobra.Command {
-	var file, secretFile string
+	var file, secretFile, nameFlag, vmFlag, dcFlag, vpcFlag string
 	cmd := &cobra.Command{Use: use, Short: method + " (public JSON request)", Long: method + " accepts the SDK protobuf JSON request via --file PATH or --file - (stdin). Existing resources use names from list responses. --project fills a missing top-level project_name. Preserve request_id, resource ID and expected_version on retries. Unknown fields are rejected. No mutation is retried automatically.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if write && file == "" {
 			return errors.New("--file is required for a mutation; use a reviewed JSON request with stable retry IDs")
@@ -108,8 +108,24 @@ func observabilityRPC(opts *rootOptions, use, service, method string, write, sec
 				return errors.New("invalid request JSON; check field names and types against the SDK contract")
 			}
 		}
-		if field := md.Input().Fields().ByName("project_name"); field != nil && input.Get(field).String() == "" {
-			input.Set(field, protoreflect.ValueOfString(cc.profile.Project))
+		// Convenience flags fill missing top-level fields; a --file value wins.
+		for _, fill := range []struct{ field, value string }{
+			{"project_name", cc.profile.Project},
+			{"datacenter_name", datacenterDefault(dcFlag, cc.profile.Region, write)},
+			{"name", nameFlag},
+			{"target_vm", vmFlag},
+			{"vpc_name", vpcFlag},
+		} {
+			if fd := md.Input().Fields().ByName(protoreflect.Name(fill.field)); fd != nil && fd.Kind() == protoreflect.StringKind && input.Get(fd).String() == "" && fill.value != "" {
+				input.Set(fd, protoreflect.ValueOfString(fill.value))
+			}
+		}
+		// Mutations are idempotent by request_id. Generate one when the request
+		// omits it, and show it so a retry can reuse the exact same request.
+		if fd := md.Input().Fields().ByName("request_id"); write && fd != nil && fd.Kind() == protoreflect.StringKind && input.Get(fd).String() == "" {
+			id := newRequestID()
+			input.Set(fd, protoreflect.ValueOfString(id))
+			fmt.Fprintf(cmd.ErrOrStderr(), "request_id %s (add \"request_id\": \"%s\" to the request to retry it).\n", id, id)
 		}
 		var outFile *os.File
 		if secret {
@@ -158,6 +174,20 @@ func observabilityRPC(opts *rootOptions, use, service, method string, write, sec
 		return outputfmt.Write(cmd.OutOrStdout(), cc.profile.Format, output)
 	}}
 	cmd.Flags().StringVarP(&file, "file", "f", "", "protobuf JSON request file, or - for stdin")
+	if in := requestFields(service, method); in != nil {
+		if in.ByName("name") != nil {
+			cmd.Flags().StringVar(&nameFlag, "name", "", "resource name (fills the request's name)")
+		}
+		if in.ByName("target_vm") != nil {
+			cmd.Flags().StringVar(&vmFlag, "vm", "", "VM resource name (fills target_vm)")
+		}
+		if in.ByName("vpc_name") != nil {
+			cmd.Flags().StringVar(&vpcFlag, "vpc", "", "VPC resource name (fills vpc_name)")
+		}
+		if in.ByName("datacenter_name") != nil {
+			cmd.Flags().StringVar(&dcFlag, "datacenter", "", "datacenter (defaults to the profile region)")
+		}
+	}
 	cmd.Annotations = map[string]string{"rpc-service": service, "rpc-method": method}
 	if secret {
 		cmd.Flags().StringVar(&secretFile, "secret-file", "", "new private output file for the one-time secret (never overwritten)")
@@ -203,4 +233,23 @@ func callObservability(ctx context.Context, cc *commandContext, method protorefl
 		return nil, errors.New("invalid response; mutation status is unconfirmed")
 	}
 	return out, nil
+}
+
+// requestFields returns the input message fields of service/method, or nil when
+// the descriptor is not registered.
+func requestFields(service, method string) protoreflect.FieldDescriptors {
+	md, err := findMethod(service, method)
+	if err != nil {
+		return nil
+	}
+	return md.Input().Fields()
+}
+
+// datacenterDefault: an explicit --datacenter always applies; the profile
+// region fills only mutations, so a list is never silently narrowed to one DC.
+func datacenterDefault(flag, profile string, write bool) string {
+	if flag != "" || !write {
+		return flag
+	}
+	return profile
 }

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -38,9 +39,9 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 	addPageFlags(list, &pages)
 	list.Flags().StringVar(&project, "project", "", "project")
 
-	var createProject, networkID, region, display, subnetV4, ipRangeStart, ipRangeEnd string
+	var createProject, region, display, subnet, requestID string
 	var netLabelPairs, netAnnotationPairs []string
-	create := &cobra.Command{Use: "create", Short: "Create a tenant network", RunE: func(cmd *cobra.Command, _ []string) error {
+	create := &cobra.Command{Use: "create", Short: "Publish a VPC subnet as a network in a datacenter", Long: "Publishes an owned VPC subnet (see `metalhost vpc subnet`) as a network VMs can join in one datacenter. Pass the same --request-id to retry an uncertain create; a new ID creates another network.", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
 			return err
@@ -49,8 +50,15 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
+		if subnet == "" {
+			return errors.New("--subnet is required (a VPC subnet resource name, e.g. projects/p/vpcs/v/subnets/s)")
+		}
 		if region == "" {
 			region = ctx.profile.Region
+		}
+		if requestID == "" {
+			requestID = newRequestID()
+			fmt.Fprintf(cmd.ErrOrStderr(), "Request ID %s (pass --request-id %s to retry this create).\n", requestID, requestID)
 		}
 		client, err := ctx.networkClient()
 		if err != nil {
@@ -58,14 +66,12 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		}
 		resp, err := client.CreateNetwork(cmd.Context(), connect.NewRequest(&networkv1.CreateNetworkRequest{
 			ProjectName:    projectName,
-			NetworkId:      networkID,
+			SubnetName:     subnet,
 			DisplayName:    display,
 			DatacenterName: region,
-			SubnetCidrV4:   subnetV4,
-			IpRangeStart:   ipRangeStart,
-			IpRangeEnd:     ipRangeEnd,
 			Labels:         stringMapFromPairs(netLabelPairs),
 			Annotations:    stringMapFromPairs(netAnnotationPairs),
+			RequestId:      requestID,
 		}))
 		if err != nil {
 			return err
@@ -73,12 +79,10 @@ func newTenantNetworkCommand(opts *rootOptions) []*cobra.Command {
 		return ctx.write(resp.Msg)
 	}}
 	create.Flags().StringVar(&createProject, "project", "", "project")
-	create.Flags().StringVar(&networkID, "id", "", "network id (optional; auto-minted if empty)")
-	create.Flags().StringVar(&region, "region", "", "datacenter, e.g. datacenters/us-dal-1")
+	create.Flags().StringVar(&subnet, "subnet", "", "VPC subnet resource name (required)")
+	create.Flags().StringVar(&region, "region", "", "datacenter, e.g. datacenters/us-dal-1 (defaults to profile region)")
 	create.Flags().StringVar(&display, "display-name", "", "display name")
-	create.Flags().StringVar(&subnetV4, "subnet-cidr-v4", "", "preferred IPv4 CIDR (/24 in v1; platform auto-allocates if empty)")
-	create.Flags().StringVar(&ipRangeStart, "ip-range-start", "", "first usable host within the subnet (optional)")
-	create.Flags().StringVar(&ipRangeEnd, "ip-range-end", "", "last usable host within the subnet (optional)")
+	create.Flags().StringVar(&requestID, "request-id", "", "UUID that makes retries idempotent (generated when empty)")
 	create.Flags().StringSliceVar(&netLabelPairs, "label", nil, "labels as key=value (repeatable)")
 	create.Flags().StringSliceVar(&netAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 
@@ -105,9 +109,11 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 	cmd.AddCommand(list)
 
 	var (
-		createProject, createDC, createVM, createDir, createDisplay string
-		createSources, createDestinations, createPorts              []string
-		fwLabelPairs, fwAnnotationPairs                             []string
+		createProject, createDC, createVM, createDir, createDisplay  string
+		createRequestID, createAction, createFamily, createForwardIP string
+		createPriority                                               int32
+		createSources, createDestinations, createPorts               []string
+		fwLabelPairs, fwAnnotationPairs                              []string
 	)
 	create := &cobra.Command{Use: "create", Short: "Create a firewall rule", RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, err := loadCommandContext(opts)
@@ -125,21 +131,30 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if createRequestID == "" {
+			createRequestID = newRequestID()
+			fmt.Fprintf(cmd.ErrOrStderr(), "Request ID %s (pass --request-id %s to retry this create).\n", createRequestID, createRequestID)
+		}
 		client, err := ctx.networkClient()
 		if err != nil {
 			return err
 		}
 		resp, err := client.CreateFirewallRule(cmd.Context(), connect.NewRequest(&networkv1.CreateFirewallRuleRequest{
-			ProjectName:    projectName,
-			DatacenterName: createDC,
-			TargetVm:       createVM,
-			Ports:          ports,
-			Sources:        createSources,
-			Destinations:   createDestinations,
-			Direction:      createDir,
-			DisplayName:    createDisplay,
-			Labels:         stringMapFromPairs(fwLabelPairs),
-			Annotations:    stringMapFromPairs(fwAnnotationPairs),
+			ProjectName:        projectName,
+			DatacenterName:     createDC,
+			TargetVm:           createVM,
+			Ports:              ports,
+			Sources:            createSources,
+			Destinations:       createDestinations,
+			Direction:          createDir,
+			DisplayName:        createDisplay,
+			Labels:             stringMapFromPairs(fwLabelPairs),
+			Annotations:        stringMapFromPairs(fwAnnotationPairs),
+			RequestId:          createRequestID,
+			Action:             createAction,
+			IpFamily:           createFamily,
+			Priority:           createPriority,
+			ForwardingPublicIp: createForwardIP,
 		}))
 		if err != nil {
 			return err
@@ -153,11 +168,17 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 	create.Flags().StringVar(&createDisplay, "display-name", "", "display name")
 	create.Flags().StringSliceVar(&createSources, "source", nil, "source CIDR or VM (repeatable)")
 	create.Flags().StringSliceVar(&createDestinations, "destination", nil, "destination CIDR (egress only; repeatable)")
-	create.Flags().StringSliceVar(&createPorts, "port", nil, "PORT[/PROTO][-END] e.g. 22/tcp, 30000-32767/tcp (repeatable)")
+	create.Flags().StringSliceVar(&createPorts, "port", nil, "PORT[-END][/PROTO], or PUBLIC:VM[/PROTO] with --forward-public-ip; e.g. 22/tcp, 30000-32767/tcp, 2222:22/tcp (repeatable)")
+	create.Flags().StringVar(&createAction, "action", "", "allow (default) | deny")
+	create.Flags().StringVar(&createFamily, "ip-family", "", "ipv4 | ipv6 | both (default: the rule's sources decide)")
+	create.Flags().Int32Var(&createPriority, "priority", 0, "rule priority; lower numbers are evaluated first (0 = default)")
+	create.Flags().StringVar(&createForwardIP, "forward-public-ip", "", "public IPv4 attached to the VM; ports become PUBLIC:VM forwarding")
+	create.Flags().StringVar(&createRequestID, "request-id", "", "UUID that makes retries idempotent (generated when empty)")
 	create.Flags().StringSliceVar(&fwLabelPairs, "label", nil, "labels as key=value (repeatable)")
 	create.Flags().StringSliceVar(&fwAnnotationPairs, "annotation", nil, "annotations as key=value (repeatable)")
 	cmd.AddCommand(create)
 
+	var deleteRequestID string
 	del := &cobra.Command{Use: "delete NAME", Short: "Delete a firewall rule", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, err := loadCommandContext(opts)
 		if err != nil {
@@ -167,19 +188,25 @@ func newFirewallCommand(opts *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.DeleteFirewallRule(cmd.Context(), connect.NewRequest(&networkv1.DeleteFirewallRuleRequest{Name: args[0]}))
+		if deleteRequestID == "" {
+			deleteRequestID = newRequestID()
+			fmt.Fprintf(cmd.ErrOrStderr(), "Request ID %s (pass --request-id %s to retry this delete).\n", deleteRequestID, deleteRequestID)
+		}
+		resp, err := client.DeleteFirewallRule(cmd.Context(), connect.NewRequest(&networkv1.DeleteFirewallRuleRequest{Name: args[0], RequestId: deleteRequestID}))
 		if err != nil {
 			return err
 		}
 		return writeDeleted(cmd, ctx, "firewall", args[0], resp.Msg)
 	}}
+	del.Flags().StringVar(&deleteRequestID, "request-id", "", "UUID that makes retries idempotent (generated when empty)")
 	cmd.AddCommand(del)
 	attachNameCompleter(cmd, firewallNameCompleter(opts))
 	return cmd
 }
 
-// parsePortMappings parses CLI --port flags. Each value is PORT[-END][/PROTO].
-// Default proto is tcp. END is optional (single port when omitted).
+// parsePortMappings parses CLI --port flags. Each value is PORT[-END][/PROTO],
+// or PUBLIC:VM[/PROTO] for port forwarding. Default proto is tcp. END is
+// optional (single port when omitted).
 func parsePortMappings(raw []string) ([]*networkv1.PortMapping, error) {
 	out := make([]*networkv1.PortMapping, 0, len(raw))
 	for _, s := range raw {
@@ -192,6 +219,14 @@ func parsePortMappings(raw []string) ([]*networkv1.PortMapping, error) {
 			proto = strings.ToLower(strings.TrimSpace(s[i+1:]))
 			s = s[:i]
 		}
+		var target int
+		if i := strings.IndexByte(s, ':'); i >= 0 {
+			t, err := strconv.Atoi(strings.TrimSpace(s[i+1:]))
+			if err != nil || t < 1 || t > 65535 {
+				return nil, fmt.Errorf("invalid VM port %q: must be 1..65535", s[i+1:])
+			}
+			target, s = t, s[:i]
+		}
 		var startStr, endStr string
 		if i := strings.IndexByte(s, '-'); i >= 0 {
 			startStr, endStr = s[:i], s[i+1:]
@@ -202,7 +237,10 @@ func parsePortMappings(raw []string) ([]*networkv1.PortMapping, error) {
 		if err != nil || start < 1 || start > 65535 {
 			return nil, fmt.Errorf("invalid port %q: must be 1..65535", startStr)
 		}
-		pm := &networkv1.PortMapping{Port: int32(start), Protocol: proto}
+		pm := &networkv1.PortMapping{Port: int32(start), Protocol: proto, TargetPort: int32(target)}
+		if target != 0 && endStr != "" {
+			return nil, fmt.Errorf("port forwarding takes a single port, not a range: %q", s)
+		}
 		if endStr != "" {
 			end, err := strconv.Atoi(strings.TrimSpace(endStr))
 			if err != nil || end < start || end > 65535 {

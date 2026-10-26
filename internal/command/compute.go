@@ -77,6 +77,10 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 		sshKey, userData, hostname               string
 		linuxUser, password                      string
 		network, billingModeRaw, cpuClass        string
+		publicIPName, createKey                  string
+		publicIPGeneration                       int64
+		privateOnly                              bool
+		securityGroups                           []string
 		sshKeyNames, labelPairs, annotationPairs []string
 		diskSize, vcpus, ramGib, gpuCount        int32
 		autorenew, assignPubIPv4, sudo           bool
@@ -121,6 +125,16 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 			return fmt.Errorf("--disk-size-gib must be at least 1 when using --image/--boot-url")
 		}
 
+		if privateOnly && (assignPubIPv4 || publicIPName != "") {
+			return fmt.Errorf("--private-only cannot be combined with --assign-public-ipv4 or --public-ip")
+		}
+		if assignPubIPv4 && publicIPName != "" {
+			return fmt.Errorf("use either --assign-public-ipv4 (new address) or --public-ip (reserved address), not both")
+		}
+		if publicIPName != "" && publicIPGeneration <= 0 {
+			return fmt.Errorf("--public-ip-generation is required with --public-ip (see `metalhost public-ip get`)")
+		}
+
 		computeSpec := &computev1.VMComputeSpec{Vcpus: vcpus, RamGib: ramGib, CpuClass: cpuClass}
 		if gpuModel != "" || gpuCount > 0 {
 			computeSpec.Gpu = &computev1.GPUSpec{Model: gpuModel, Count: gpuCount}
@@ -149,10 +163,17 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 				Annotations: stringMapFromPairs(annotationPairs),
 			},
 			Spec: &computev1.VirtualMachineSpec{
-				Region:    region,
-				Compute:   computeSpec,
-				Boot:      boot,
-				Network:   &computev1.VMNetworkSpec{Network: network, PublicIpv4: assignPubIPv4},
+				Region:  region,
+				Compute: computeSpec,
+				Boot:    boot,
+				Network: &computev1.VMNetworkSpec{
+					Network:                    network,
+					PublicIpv4:                 assignPubIPv4,
+					PublicIpName:               publicIPName,
+					ExpectedPublicIpGeneration: publicIPGeneration,
+					PrivateOnly:                privateOnly,
+					SecurityGroups:             securityGroups,
+				},
 				Users:     users,
 				CloudInit: userData,
 				Billing:   &computev1.VMBillingSpec{Mode: billingMode, Autorenew: autorenew},
@@ -163,7 +184,13 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		resp, err := client.CreateVirtualMachine(cmd.Context(), connect.NewRequest(&computev1.CreateVirtualMachineRequest{Manifest: manifest}))
+		// An existing public IP binding is retry-sensitive: the server requires an
+		// Idempotency-Key so a retried create cannot claim the address twice.
+		if publicIPName != "" && createKey == "" {
+			createKey = newRequestID()
+			fmt.Fprintf(cmd.ErrOrStderr(), "Idempotency key %s (pass --idempotency-key %s to retry this create).\n", createKey, createKey)
+		}
+		resp, err := client.CreateVirtualMachine(cmd.Context(), backupRequest(&computev1.CreateVirtualMachineRequest{Manifest: manifest}, createKey))
 		if err != nil {
 			return err
 		}
@@ -182,7 +209,12 @@ func newVMCommands(opts *rootOptions) []*cobra.Command {
 	create.Flags().Int32Var(&diskSize, "disk-size-gib", 0, "boot disk size GiB (required with --image/--boot-url)")
 	create.Flags().StringVar(&hostname, "hostname", "", "VM hostname (DNS-1123 label, ≤63 chars; defaults to a UUID slug)")
 	create.Flags().BoolVar(&assignPubIPv4, "assign-public-ipv4", false, "allocate a public IPv4 from the DC pool")
-	create.Flags().StringVar(&network, "network", "", "tenant network resource name, e.g. projects/p/networks/default (defaults to project's default)")
+	create.Flags().StringVar(&network, "network", "", "network resource name from `metalhost network list` (defaults to the project's default network)")
+	create.Flags().StringVar(&publicIPName, "public-ip", "", "attach a reserved public IP (from `metalhost public-ip list`) instead of allocating a new one")
+	create.Flags().Int64Var(&publicIPGeneration, "public-ip-generation", 0, "current generation of --public-ip (from `metalhost public-ip get`)")
+	create.Flags().StringVar(&createKey, "idempotency-key", "", "reuse this key to retry an uncertain create (generated with --public-ip)")
+	create.Flags().BoolVar(&privateOnly, "private-only", false, "no public IPv4 address; reachable only on the private network")
+	create.Flags().StringSliceVar(&securityGroups, "security-group", nil, "security group resource name to apply (repeatable)")
 	create.Flags().StringVar(&linuxUser, "user", "", "login username to create (default ubuntu when keys/password given)")
 	create.Flags().StringVar(&password, "password", "", "login password for --user (sent over TLS, hashed server-side)")
 	create.Flags().BoolVar(&sudo, "sudo", true, "grant the user passwordless sudo")
