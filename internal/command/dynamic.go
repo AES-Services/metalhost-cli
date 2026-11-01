@@ -103,8 +103,8 @@ func (c *commandContext) dynamicCall(ctx context.Context, md protoreflect.Method
 	}
 
 	out := dynamicpb.NewMessage(md.Output())
-	if err := protojson.Unmarshal(respBody, out); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+	if err := decodeResponse(respBody, out); err != nil {
+		return nil, fmt.Errorf("could not decode the server response: %w", err)
 	}
 	return out, nil
 }

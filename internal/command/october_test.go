@@ -89,6 +89,8 @@ func TestOctoberCommandsResolve(t *testing.T) {
 		{"vpc", "subnet", "attach"}, {"public-ip", "reserve"}, {"load-balancer", "create"},
 		{"security-group", "add-vm"}, {"vm", "network", "internet-policy", "set"},
 		{"vm", "network", "alias", "add"}, {"vm", "quote-resize"}, {"disk", "quote-resize"},
+		{"vm", "network", "public-ipv4", "get"}, {"vm", "network", "public-ipv4", "add"},
+		{"vm", "network", "public-ipv4", "remove"}, {"vm", "network", "public-ipv4", "update"},
 		{"file-share", "get"}, {"quota", "request"}, {"project", "members", "set"},
 		{"wallet", "spend-by-project"}, {"webhook", "rotate-secret"},
 		{"iam", "mfa", "regenerate-recovery-codes"}, {"automation", "github", "setup-begin"},

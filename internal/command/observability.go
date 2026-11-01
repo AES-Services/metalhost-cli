@@ -15,6 +15,7 @@ import (
 	_ "github.com/AES-Services/metalhost-sdk/gen/go/aes/monitoring/v1"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
@@ -137,7 +138,7 @@ func observabilityRPC(opts *rootOptions, use, service, method string, write, sec
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
-		output, err := callObservability(ctx, cc, md, input)
+		output, err := callObservability(ctx, cc, md, input, write)
 		if err != nil {
 			if outFile != nil {
 				_ = outFile.Close()
@@ -195,7 +196,10 @@ func observabilityRPC(opts *rootOptions, use, service, method string, write, sec
 	return cmd
 }
 
-func callObservability(ctx context.Context, cc *commandContext, method protoreflect.MethodDescriptor, input *dynamicpb.Message) (*dynamicpb.Message, error) {
+// callObservability sends one unary request. write marks a mutation, whose
+// outcome is unconfirmed when the request was sent but its response could not
+// be read or decoded.
+func callObservability(ctx context.Context, cc *commandContext, method protoreflect.MethodDescriptor, input *dynamicpb.Message, write bool) (*dynamicpb.Message, error) {
 	cfg, err := cc.sdkConfig()
 	if err != nil {
 		return nil, err
@@ -220,7 +224,10 @@ func callObservability(ctx context.Context, cc *commandContext, method protorefl
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
 	if err != nil {
-		return nil, errors.New("response interrupted; mutation status is unconfirmed")
+		if write {
+			return nil, errors.New("response interrupted; mutation status is unconfirmed")
+		}
+		return nil, fmt.Errorf("response interrupted: %w", err)
 	}
 	if len(body) > 4<<20 {
 		return nil, errors.New("response exceeds 4 MiB; narrow the query or page size")
@@ -229,10 +236,22 @@ func callObservability(ctx context.Context, cc *commandContext, method protorefl
 		return nil, connectErrorFromJSON(resp.StatusCode, body)
 	}
 	out := dynamicpb.NewMessage(method.Output())
-	if err := protojson.Unmarshal(body, out); err != nil {
-		return nil, errors.New("invalid response; mutation status is unconfirmed")
+	if err := decodeResponse(body, out); err != nil {
+		if write {
+			return nil, fmt.Errorf("could not decode the server response; mutation status is unconfirmed, retry the same request_id: %w", err)
+		}
+		return nil, fmt.Errorf("could not decode the server response: %w", err)
 	}
 	return out, nil
+}
+
+// responseUnmarshal decodes server responses. Fields newer than this build's
+// descriptors are ignored, so additive API changes do not break the CLI.
+// Requests the user supplies stay strict.
+var responseUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
+
+func decodeResponse(body []byte, out proto.Message) error {
+	return responseUnmarshal.Unmarshal(body, out)
 }
 
 // requestFields returns the input message fields of service/method, or nil when
