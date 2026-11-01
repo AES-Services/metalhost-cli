@@ -40,7 +40,7 @@ Not every verb is available for every kind. For example, `network` is list-only 
 - `public-ip`: `list`, `get`, `reserve`, `attach`, `detach`, `release`.
 - `load-balancer`: `list`, `get`, `create`, `update`, `delete`.
 - `security-group`: `list`, `get`, `create`, `update`, `delete`, `add-vm`, `remove-vm`.
-- `vm network`: `interfaces`, `internet-policy get|set`, `alias add|remove`, `set-default-public-ip`.
+- `vm network`: `interfaces`, `internet-policy get|set`, `alias add|remove`, `public-ipv4 get|add|remove|update`, `set-default-public-ip`.
 - `firewall`: firewall rules, including deny rules, priorities and port forwarding (`--forward-public-ip`, `--port PUBLIC:VM/tcp`).
 - `baremetal`: offers, inventory, quote, order, lifecycle, power, reinstall, rescue, boot device, console, and ISO/virtual-media operations.
 - `wallet`: accounts, wallets, top-ups, payments, invoices, and usage.

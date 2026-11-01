@@ -91,7 +91,7 @@ func newSecurityGroupCommand(opts *rootOptions) *cobra.Command {
 }
 
 // newVMNetworkCommand is `metalhost vm network`: a VM's interfaces, internet
-// policy, IPv4 aliases and default public IP.
+// policy, IPv4 aliases, public IPv4 addresses and default public IP.
 func newVMNetworkCommand(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "network", Short: "Inspect and change a VM's network interfaces and internet access"}
 	addRPCs(cmd, opts, networkService, rpcSpec{"interfaces", "GetVmNetworkInterfaces"})
@@ -105,8 +105,15 @@ func newVMNetworkCommand(opts *rootOptions) *cobra.Command {
 		rpcSpec{"add", "AddVmIpv4Alias"},
 		rpcSpec{"remove", "RemoveVmIpv4Alias"},
 	)
+	publicIPv4 := &cobra.Command{Use: "public-ipv4", Short: "A VM's public IPv4 addresses: main address, shared or dedicated mode, guest status"}
+	addRPCs(publicIPv4, opts, networkService,
+		rpcSpec{"get", "GetVmPublicAccess"},
+		rpcSpec{"add", "AddVmPublicIpv4"},
+		rpcSpec{"remove", "RemoveVmPublicIpv4"},
+		rpcSpec{"update", "UpdateVmPublicIpv4"},
+	)
 	addRPCs(cmd, opts, networkService, rpcSpec{"set-default-public-ip", "SetVmDefaultPublicIp"})
-	cmd.AddCommand(policy, alias)
+	cmd.AddCommand(policy, alias, publicIPv4)
 	return cmd
 }
 
